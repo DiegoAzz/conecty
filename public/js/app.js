@@ -56,10 +56,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   let unreadChatCount = 0;
   let isChatOpen = false;
 
-  // Participantes: Map(id -> { name, isScreenSharing, isAudioMuted })
   const participants = new Map();
 
-  // Sintetizador de Sonidos (Web Audio API - Sin archivos externos)
+  // Sintetizador de Sonidos (Web Audio API)
   const soundEffects = {
     ctx: null,
     init() {
@@ -91,7 +90,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       setTimeout(() => this.playTone(349.23, 'sine', 0.18), 100);
     },
     message() {
-      this.playTone(880, 'triangle', 0.08);
+      this.playTone(880, 'triangle', 0.1);
     }
   };
 
@@ -110,18 +109,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => {
       toast.classList.add('opacity-0', 'translate-y-2');
       setTimeout(() => toast.remove(), 300);
-    }, 3500);
+    }, 4000);
   }
 
-  // Prellenar código de sala si viene en la URL (?room=xxx o /room/xxx)
+  // Prellenar código de sala desde URL
   const urlParams = new URLSearchParams(window.location.search);
   const roomFromQuery = urlParams.get('room') || window.location.pathname.replace(/^\/room\//, '').replace(/^\//, '');
   if (roomFromQuery && roomFromQuery !== '') {
     roomCodeInput.value = roomFromQuery;
   }
 
-  // Obtener servidores STUN/TURN del backend
-  let iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
+  // Obtener servidores STUN/TURN
+  let iceServers = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' }
+  ];
   try {
     const configRes = await fetch('/api/config');
     const configData = await configRes.json();
@@ -129,45 +132,41 @@ document.addEventListener('DOMContentLoaded', async () => {
       iceServers = configData.iceServers;
     }
   } catch (e) {
-    console.warn('Usando STUN por defecto:', e);
+    console.warn('Usando STUN por defecto');
   }
 
   // Formulario de Ingreso
-  joinForm.addEventListener('submit', (e) => {
+  joinForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const userName = userNameInput.value.trim();
     let roomCode = roomCodeInput.value.trim().toLowerCase();
 
     if (!roomCode) {
-      // Generar sala aleatoria
       roomCode = 'conecty-' + Math.floor(100000 + Math.random() * 900000);
     }
 
-    startSession(userName, roomCode);
+    await startSession(userName, roomCode);
   });
 
-  function startSession(userName, roomId) {
+  async function startSession(userName, roomId) {
     currentRoomId = roomId;
     headerRoomId.textContent = roomId;
 
-    // Actualizar URL sin recargar para facilitar compartir el link
     const newUrl = `${window.location.origin}/?room=${roomId}`;
     window.history.pushState({ path: newUrl }, '', newUrl);
 
     // Conectar a Socket.io
     socket = io();
 
-    // Inicializar controlador de puntero láser
+    // Controlador de puntero láser
     laser = new LaserController(laserCanvas, screenVideo, (pointerData) => {
-      // Enviar primero por DataChannel de WebRTC (ultra baja latencia)
       const sentP2P = webrtc ? webrtc.broadcastData({ type: 'laser', ...pointerData }) : false;
-      // Fallback a WebSocket si no hay DataChannel activo
       if (!sentP2P && socket) {
         socket.emit('laser-pointer', pointerData);
       }
     });
 
-    // Inicializar WebRTC
+    // WebRTC Manager
     webrtc = new WebRTCManager({
       socket,
       iceServers,
@@ -193,20 +192,21 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
 
-    // Inicializar micrófono local automáticamente para llamadas
-    webrtc.initLocalAudio().then((stream) => {
-      if (stream) {
-        showToast('🎙️ Micrófono activado para la llamada', 'success');
-      }
-    });
+    // 1. Inicializar micrófono local ANTES de unirse a la sala
+    const audioStream = await webrtc.initLocalAudio();
+    if (audioStream) {
+      showToast('🎙️ Micrófono activado para la llamada', 'success');
+      monitorMicrophoneActivity(audioStream);
+    } else {
+      showToast('⚠️ No se detectó micrófono. Podrás escuchar la llamada.', 'info');
+    }
 
-    // Manejar eventos de Socket
+    // 2. Configurar eventos de sockets
     setupSocketEvents();
 
-    // Enviar solicitud de ingreso a la sala
+    // 3. Emitir ingreso a la sala
     socket.emit('join-room', { roomId, userName });
 
-    // Cambiar vistas
     lobbyView.classList.add('hidden');
     roomView.classList.remove('hidden');
 
@@ -214,12 +214,37 @@ document.addEventListener('DOMContentLoaded', async () => {
     showToast(`Te uniste a la sala ${roomId}`, 'success');
   }
 
+  function monitorMicrophoneActivity(stream) {
+    try {
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioCtx.createMediaStreamSource(stream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 64;
+      source.connect(analyser);
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      const check = () => {
+        analyser.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+        const avg = sum / dataArray.length;
+        if (avg > 18 && (!webrtc || !webrtc.isMicMuted)) {
+          micIcon.classList.add('text-emerald-300', 'scale-110');
+        } else {
+          micIcon.classList.remove('scale-110');
+        }
+        requestAnimationFrame(check);
+      };
+      check();
+    } catch (e) {}
+  }
+
   function setupSocketEvents() {
     socket.on('room-joined', ({ user, existingUsers }) => {
       myUser = user;
       updateParticipantsList(existingUsers);
 
-      // Crear ofertas WebRTC para todos los usuarios existentes en la sala
+      // Iniciar oferta WebRTC hacia cada participante existente
       existingUsers.forEach((existing) => {
         if (existing.id !== socket.id) {
           webrtc.createOffer(existing.id);
@@ -232,6 +257,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       showToast(`${user.name} se unió a la sala`, 'info');
       participants.set(user.id, user);
       renderParticipants();
+
+      // Si yo ya estoy compartiendo pantalla, compartirla con el nuevo participante
+      if (isSharingScreen && webrtc.localScreenStream) {
+        const peerObj = webrtc.getOrCreatePeer(user.id, true);
+        webrtc.localScreenStream.getTracks().forEach((track) => {
+          const sender = peerObj.pc.addTrack(track, webrtc.localScreenStream);
+          peerObj.screenSenders.push(sender);
+        });
+        webrtc.renegotiate(user.id);
+      }
     });
 
     socket.on('offer', async ({ callerId, offer }) => {
@@ -255,8 +290,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (user) {
         user.isScreenSharing = isSharing;
       }
+      renderParticipants();
       if (!isSharing) {
-        // Si el que estaba compartiendo detuvo su pantalla
         checkScreenSharingState();
       }
     });
@@ -268,6 +303,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         unreadChatCount++;
         chatBadge.textContent = unreadChatCount;
         chatBadge.classList.remove('hidden');
+        showToast(`💬 ${msg.senderName}: ${msg.text.substring(0, 35)}...`, 'info');
       }
     });
 
@@ -285,21 +321,34 @@ document.addEventListener('DOMContentLoaded', async () => {
       audioElement = document.createElement('audio');
       audioElement.id = `audio-${peerId}`;
       audioElement.autoplay = true;
+      audioElement.playsInline = true;
       remoteAudios.appendChild(audioElement);
     }
     audioElement.srcObject = stream;
+    audioElement.play().catch((e) => {
+      console.warn('Autoplay bloqueado esperando interacción del usuario:', e);
+      const unlockAudio = () => {
+        audioElement.play().catch(() => {});
+        window.removeEventListener('click', unlockAudio);
+      };
+      window.addEventListener('click', unlockAudio);
+    });
   }
 
   function handleRemoteVideo(peerId, stream) {
     const user = participants.get(peerId);
     sharerNameText.textContent = `Pantalla de: ${user ? user.name : 'Compañero'}`;
 
+    // Silenciar el elemento de video para evitar restricciones de reproducción automática en navegadores
+    screenVideo.muted = true;
     screenVideo.srcObject = stream;
+    screenVideo.play().catch((e) => console.warn('Error al reproducir video:', e));
+
     idleScreen.classList.add('hidden');
     videoWrapper.classList.remove('hidden');
     laser.clearCanvas();
     laser.resizeCanvas();
-    showToast(`Mostrando pantalla de ${user ? user.name : 'compañero'}`, 'info');
+    showToast(`Mostrando pantalla de ${user ? user.name : 'compañero'}`, 'success');
   }
 
   function checkScreenSharingState() {
@@ -333,16 +382,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function renderParticipants() {
-    const totalCount = participants.size + 1; // +1 para el usuario local
+    const totalCount = participants.size + 1;
     participantsCount.textContent = `${totalCount} participante${totalCount > 1 ? 's' : ''}`;
 
     participantsBar.innerHTML = '';
 
-    // Mi propio avatar
+    // Mi avatar
     const myTag = document.createElement('div');
     myTag.className = 'px-3 py-1.5 rounded-xl glass-panel border border-slate-700/60 text-xs text-white flex items-center space-x-2 shrink-0';
     myTag.innerHTML = `
-      <span class="w-2 h-2 rounded-full ${webrtc && webrtc.isMicMuted ? 'bg-rose-500' : 'bg-emerald-400'}"></span>
+      <span class="w-2 h-2 rounded-full ${webrtc && webrtc.isMicMuted ? 'bg-rose-500' : 'bg-emerald-400 animate-pulse'}"></span>
       <span class="font-medium">${myUser ? myUser.name : 'Tú'} (Tú)</span>
       ${isSharingScreen ? '<i data-lucide="monitor" class="w-3 h-3 text-indigo-400"></i>' : ''}
     `;
@@ -363,10 +412,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (window.lucide) lucide.createIcons();
   }
 
-  // Toggle de Pantalla Compartida
+  // Compartir Pantalla
   async function toggleScreenShare() {
     if (isSharingScreen) {
-      webrtc.stopScreenShare();
+      await webrtc.stopScreenShare();
       isSharingScreen = false;
       screenText.textContent = 'Compartir Pantalla';
       btnToggleScreen.classList.remove('bg-rose-600', 'hover:bg-rose-500');
@@ -375,8 +424,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       checkScreenSharingState();
       showToast('Dejaste de compartir pantalla', 'info');
     } else {
-      const stream = await webrtc.startScreenShare(() => {
-        // Al terminar desde la barra del navegador
+      const stream = await webrtc.startScreenShare(async () => {
         isSharingScreen = false;
         screenText.textContent = 'Compartir Pantalla';
         btnToggleScreen.classList.remove('bg-rose-600', 'hover:bg-rose-500');
@@ -391,6 +439,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         btnToggleScreen.classList.remove('bg-indigo-600', 'hover:bg-indigo-500');
         btnToggleScreen.classList.add('bg-rose-600', 'hover:bg-rose-500');
 
+        screenVideo.muted = true;
         screenVideo.srcObject = stream;
         sharerNameText.textContent = `Compartiendo tu pantalla (${myUser ? myUser.name : 'Tú'})`;
         idleScreen.classList.add('hidden');
@@ -399,7 +448,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         laser.resizeCanvas();
 
         socket.emit('screen-share-status', { isSharing: true });
-        showToast('Estás compartiendo tu pantalla', 'success');
+        showToast('Estás transmitiendo tu pantalla a los participantes', 'success');
       }
     }
     renderParticipants();
@@ -408,23 +457,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   btnToggleScreen.addEventListener('click', toggleScreenShare);
   btnStartShareIdle.addEventListener('click', toggleScreenShare);
 
-  // Toggle de Micrófono
+  // Silenciar / Activar Micrófono
   btnToggleMic.addEventListener('click', () => {
     if (!webrtc) return;
     const isUnmuted = webrtc.toggleMicrophone();
     if (isUnmuted) {
       micIcon.className = 'w-4 h-4 text-emerald-400';
       micText.textContent = 'Micrófono';
-      showToast('Micrófono activado', 'success');
+      showToast('🎙️ Micrófono activado', 'success');
     } else {
       micIcon.className = 'w-4 h-4 text-rose-400';
       micText.textContent = 'Silenciado';
-      showToast('Micrófono silenciado', 'info');
+      showToast('🔇 Micrófono silenciado', 'info');
     }
     renderParticipants();
   });
 
-  // Atajo de teclado 'M' para silenciar
   window.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
     if (e.key === 'm' || e.key === 'M') {
@@ -432,14 +480,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Toggle Puntero Láser
+  // Puntero Láser
   btnToggleLaser.addEventListener('click', () => {
     if (!laser) return;
     laser.isActive = !laser.isActive;
     if (laser.isActive) {
       btnToggleLaser.classList.add('border-indigo-500/80', 'bg-indigo-950/40');
       pointerModeIndicator.classList.remove('hidden');
-      showToast('Puntero láser activado (mueve y haz clic sobre la pantalla)', 'info');
+      showToast('Puntero láser activado', 'info');
     } else {
       btnToggleLaser.classList.remove('border-indigo-500/80', 'bg-indigo-950/40');
       pointerModeIndicator.classList.add('hidden');
@@ -447,7 +495,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Limpiar Lienzo
   btnClearCanvas.addEventListener('click', () => {
     if (laser) {
       laser.clearCanvas();
@@ -455,27 +502,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Copiar Enlace
+  // Enlace de Invitación
   function copyInviteLink() {
     const inviteUrl = `${window.location.origin}/?room=${currentRoomId}`;
     navigator.clipboard.writeText(inviteUrl).then(() => {
       showToast('📋 Enlace de sala copiado al portapapeles', 'success');
     }).catch(() => {
-      prompt('Copia este enlace para invitar a otra persona:', inviteUrl);
+      prompt('Copia este enlace para invitar:', inviteUrl);
     });
   }
 
   btnCopyInvite.addEventListener('click', copyInviteLink);
   btnQuickCopy.addEventListener('click', copyInviteLink);
 
-  // Chat
+  // Chat Lateral
   function toggleChat() {
     isChatOpen = !isChatOpen;
     if (isChatOpen) {
       chatSidebar.classList.remove('translate-x-full');
       unreadChatCount = 0;
       chatBadge.classList.add('hidden');
-      chatInput.focus();
+      setTimeout(() => chatInput.focus(), 150);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
     } else {
       chatSidebar.classList.add('translate-x-full');
     }

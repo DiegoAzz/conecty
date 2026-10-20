@@ -1,18 +1,22 @@
 /**
  * WebRTC Connection Manager
- * Gestiona conexiones P2P en malla para audio full duplex, transmisión de pantalla
- * y canales de datos de ultra baja latencia.
+ * Implementación robusta con re-negociación automática (Perfect Negotiation)
+ * para llamadas de voz y transmisión de pantalla dinámica.
  */
 
 class WebRTCManager {
   constructor({ socket, iceServers, onRemoteStream, onRemoteLeave, onDataChannelMessage }) {
     this.socket = socket;
-    this.iceServers = iceServers || [{ urls: 'stun:stun.l.google.com:19302' }];
+    this.iceServers = iceServers || [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun.cloudflare.com:3478' }
+    ];
     this.onRemoteStream = onRemoteStream;
     this.onRemoteLeave = onRemoteLeave;
     this.onDataChannelMessage = onDataChannelMessage;
 
-    // socketId -> { pc, dataChannel }
+    // socketId -> { pc, dataChannel, screenSenders: [], audioSender: null, pendingCandidates: [], makingOffer: false, ignoreOffer: false }
     this.peers = new Map();
 
     this.localAudioStream = null;
@@ -33,6 +37,7 @@ class WebRTCManager {
         },
         video: false
       });
+      console.log('🎙️ Micrófono local capturado exitosamente');
       return this.localAudioStream;
     } catch (err) {
       console.warn('No se pudo acceder al micrófono o permiso denegado:', err);
@@ -52,68 +57,11 @@ class WebRTCManager {
   }
 
   /**
-   * Inicia la captura de pantalla con audio del sistema opcional
+   * Obtiene o crea la conexión peer con otro usuario
    */
-  async startScreenShare(onEnded) {
-    try {
-      this.localScreenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          cursor: 'always',
-          frameRate: { ideal: 30, max: 60 }
-        },
-        audio: true
-      });
-
-      // Si el usuario presiona "Dejar de compartir" en la barra nativa del navegador
-      const videoTrack = this.localScreenStream.getVideoTracks()[0];
-      videoTrack.onended = () => {
-        this.stopScreenShare();
-        if (onEnded) onEnded();
-      };
-
-      // Agregar los tracks de pantalla a todos los peers conectados
-      this.localScreenStream.getTracks().forEach((track) => {
-        for (const [peerId, { pc }] of this.peers.entries()) {
-          pc.addTrack(track, this.localScreenStream);
-        }
-      });
-
-      return this.localScreenStream;
-    } catch (err) {
-      console.warn('Captura de pantalla cancelada o rechazada:', err);
-      return null;
-    }
-  }
-
-  /**
-   * Detiene la captura de pantalla
-   */
-  stopScreenShare() {
-    if (this.localScreenStream) {
-      this.localScreenStream.getTracks().forEach((track) => {
-        track.stop();
-        for (const [peerId, { pc }] of this.peers.entries()) {
-          const senders = pc.getSenders();
-          const sender = senders.find((s) => s.track === track);
-          if (sender) {
-            try {
-              pc.removeTrack(sender);
-            } catch (e) {
-              console.error('Error al remover track:', e);
-            }
-          }
-        }
-      });
-      this.localScreenStream = null;
-    }
-  }
-
-  /**
-   * Crea una conexión RTCPeerConnection para un usuario remoto
-   */
-  createPeerConnection(targetId, isInitiator) {
+  getOrCreatePeer(targetId, isInitiator = false) {
     if (this.peers.has(targetId)) {
-      return this.peers.get(targetId).pc;
+      return this.peers.get(targetId);
     }
 
     const pc = new RTCPeerConnection({
@@ -121,37 +69,48 @@ class WebRTCManager {
       iceCandidatePoolSize: 10
     });
 
-    let dataChannel = null;
+    const isPolite = this.socket.id > targetId;
+    const peerObj = {
+      pc,
+      dataChannel: null,
+      screenSenders: [],
+      audioSender: null,
+      pendingCandidates: [],
+      makingOffer: false,
+      ignoreOffer: false,
+      isPolite
+    };
 
+    // Crear DataChannel para eventos del puntero láser
     if (isInitiator) {
-      // Crear canal de datos para puntero láser y eventos rápidos
       try {
-        dataChannel = pc.createDataChannel('conecty-events', {
+        peerObj.dataChannel = pc.createDataChannel('conecty-events', {
           ordered: false,
           maxRetransmits: 0
         });
-        this.setupDataChannel(dataChannel, targetId);
+        this.setupDataChannel(peerObj.dataChannel, targetId);
       } catch (err) {
         console.warn('Error al crear DataChannel:', err);
       }
     } else {
       pc.ondatachannel = (event) => {
-        dataChannel = event.channel;
-        this.setupDataChannel(dataChannel, targetId);
+        peerObj.dataChannel = event.channel;
+        this.setupDataChannel(peerObj.dataChannel, targetId);
       };
     }
 
-    // Agregar tracks de audio locales
+    // Agregar tracks de audio locales si ya están disponibles
     if (this.localAudioStream) {
       this.localAudioStream.getAudioTracks().forEach((track) => {
-        pc.addTrack(track, this.localAudioStream);
+        peerObj.audioSender = pc.addTrack(track, this.localAudioStream);
       });
     }
 
-    // Agregar tracks de pantalla locales si está compartiendo
+    // Agregar tracks de pantalla locales si ya se está compartiendo
     if (this.localScreenStream) {
       this.localScreenStream.getTracks().forEach((track) => {
-        pc.addTrack(track, this.localScreenStream);
+        const sender = pc.addTrack(track, this.localScreenStream);
+        peerObj.screenSenders.push(sender);
       });
     }
 
@@ -165,21 +124,24 @@ class WebRTCManager {
       }
     };
 
-    // Manejar streams remotos entrantes
+    // Manejar tracks remotos entrantes (audio o pantalla)
     pc.ontrack = (event) => {
+      console.log(`📡 Recibido track remoto (${event.track.kind}) de ${targetId}`);
       if (this.onRemoteStream) {
-        this.onRemoteStream(targetId, event.streams[0], event.track);
+        const stream = event.streams && event.streams[0] ? event.streams[0] : new MediaStream([event.track]);
+        this.onRemoteStream(targetId, stream, event.track);
       }
     };
 
     pc.onconnectionstatechange = () => {
+      console.log(`Conexión con ${targetId} en estado: ${pc.connectionState}`);
       if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
         this.closePeer(targetId);
       }
     };
 
-    this.peers.set(targetId, { pc, dataChannel });
-    return pc;
+    this.peers.set(targetId, peerObj);
+    return peerObj;
   }
 
   setupDataChannel(channel, peerId) {
@@ -199,51 +161,136 @@ class WebRTCManager {
   }
 
   /**
-   * Envía un evento a través de DataChannels (fallback a WebSocket)
+   * Inicia la captura de pantalla y re-negocia con todos los participantes
    */
-  broadcastData(data) {
-    let sentViaDataChannel = false;
-    const json = JSON.stringify(data);
+  async startScreenShare(onEnded) {
+    try {
+      this.localScreenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          cursor: 'always',
+          frameRate: { ideal: 30, max: 60 }
+        },
+        audio: true
+      });
 
-    for (const [peerId, { dataChannel }] of this.peers.entries()) {
-      if (dataChannel && dataChannel.readyState === 'open') {
-        try {
-          dataChannel.send(json);
-          sentViaDataChannel = true;
-        } catch (e) {
-          // Ignorar y usar fallback
+      const videoTrack = this.localScreenStream.getVideoTracks()[0];
+      videoTrack.onended = () => {
+        this.stopScreenShare();
+        if (onEnded) onEnded();
+      };
+
+      // Agregar los tracks de pantalla a todas las conexiones peer existentes
+      for (const [peerId, peerObj] of this.peers.entries()) {
+        const pc = peerObj.pc;
+        this.localScreenStream.getTracks().forEach((track) => {
+          const sender = pc.addTrack(track, this.localScreenStream);
+          peerObj.screenSenders.push(sender);
+        });
+        // Re-negociar explícitamente para transmitir el nuevo video
+        await this.renegotiate(peerId);
+      }
+
+      return this.localScreenStream;
+    } catch (err) {
+      console.warn('Captura de pantalla cancelada o rechazada:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Detiene la transmisión de pantalla y re-negocia para remover los tracks
+   */
+  async stopScreenShare() {
+    if (this.localScreenStream) {
+      this.localScreenStream.getTracks().forEach((track) => track.stop());
+
+      for (const [peerId, peerObj] of this.peers.entries()) {
+        const pc = peerObj.pc;
+        if (peerObj.screenSenders && peerObj.screenSenders.length > 0) {
+          peerObj.screenSenders.forEach((sender) => {
+            try {
+              pc.removeTrack(sender);
+            } catch (e) {
+              console.warn('Error al remover track de pantalla:', e);
+            }
+          });
+          peerObj.screenSenders = [];
+          // Re-negociar para actualizar el estado del peer remoto
+          await this.renegotiate(peerId);
         }
       }
+      this.localScreenStream = null;
     }
-    return sentViaDataChannel;
   }
 
   /**
-   * Crea una oferta SDP para un peer
+   * Re-negociación SDP para enviar actualizaciones de tracks
+   */
+  async renegotiate(peerId) {
+    const peerObj = this.peers.get(peerId);
+    if (!peerObj || !peerObj.pc) return;
+    try {
+      peerObj.makingOffer = true;
+      const offer = await peerObj.pc.createOffer();
+      await peerObj.pc.setLocalDescription(offer);
+      this.socket.emit('offer', {
+        targetId: peerId,
+        offer: peerObj.pc.localDescription
+      });
+    } catch (err) {
+      console.error(`Error al re-negociar con ${peerId}:`, err);
+    } finally {
+      peerObj.makingOffer = false;
+    }
+  }
+
+  /**
+   * Crea una oferta SDP inicial
    */
   async createOffer(targetId) {
-    const pc = this.createPeerConnection(targetId, true);
-    try {
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      this.socket.emit('offer', { targetId, offer });
-    } catch (err) {
-      console.error('Error creando oferta SDP:', err);
-    }
+    const peerObj = this.getOrCreatePeer(targetId, true);
+    await this.renegotiate(targetId);
   }
 
   /**
-   * Maneja una oferta SDP recibida
+   * Maneja una oferta SDP recibida (con soporte de Perfect Negotiation)
    */
   async handleOffer(callerId, offer) {
-    const pc = this.createPeerConnection(callerId, false);
+    const peerObj = this.getOrCreatePeer(callerId, false);
+    const pc = peerObj.pc;
+
+    const offerCollision = (peerObj.makingOffer || pc.signalingState !== 'stable');
+    peerObj.ignoreOffer = !peerObj.isPolite && offerCollision;
+
+    if (peerObj.ignoreOffer) {
+      console.warn('Colisión de oferta ignorada por ser peer impolito:', callerId);
+      return;
+    }
+
     try {
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
+
+      // Vaciar candidatos pendientes que llegaron antes de remoteDescription
+      if (peerObj.pendingCandidates.length > 0) {
+        for (const candidate of peerObj.pendingCandidates) {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          } catch (e) {
+            console.warn('Error al procesar candidato pendiente:', e);
+          }
+        }
+        peerObj.pendingCandidates = [];
+      }
+
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
-      this.socket.emit('answer', { targetId: callerId, answer });
+
+      this.socket.emit('answer', {
+        targetId: callerId,
+        answer: pc.localDescription
+      });
     } catch (err) {
-      console.error('Error respondiendo oferta SDP:', err);
+      console.error('Error al manejar oferta SDP:', err);
     }
   }
 
@@ -251,10 +298,22 @@ class WebRTCManager {
    * Maneja una respuesta SDP recibida
    */
   async handleAnswer(responderId, answer) {
-    const peer = this.peers.get(responderId);
-    if (peer && peer.pc) {
+    const peerObj = this.peers.get(responderId);
+    if (peerObj && peerObj.pc) {
       try {
-        await peer.pc.setRemoteDescription(new RTCSessionDescription(answer));
+        await peerObj.pc.setRemoteDescription(new RTCSessionDescription(answer));
+
+        // Vaciar candidatos pendientes
+        if (peerObj.pendingCandidates.length > 0) {
+          for (const candidate of peerObj.pendingCandidates) {
+            try {
+              await peerObj.pc.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch (e) {
+              console.warn('Error al procesar candidato pendiente:', e);
+            }
+          }
+          peerObj.pendingCandidates = [];
+        }
       } catch (err) {
         console.error('Error aplicando respuesta SDP:', err);
       }
@@ -265,24 +324,48 @@ class WebRTCManager {
    * Maneja un candidato ICE recibido
    */
   async handleCandidate(senderId, candidate) {
-    const peer = this.peers.get(senderId);
-    if (peer && peer.pc) {
-      try {
-        await peer.pc.addIceCandidate(new RTCIceCandidate(candidate));
-      } catch (err) {
-        console.error('Error agregando candidato ICE:', err);
+    const peerObj = this.peers.get(senderId);
+    if (peerObj && peerObj.pc) {
+      if (!peerObj.pc.remoteDescription || !peerObj.pc.remoteDescription.type) {
+        // Encolar candidato si remoteDescription aún no se ha establecido
+        peerObj.pendingCandidates.push(candidate);
+      } else {
+        try {
+          await peerObj.pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (err) {
+          if (!peerObj.ignoreOffer) {
+            console.warn('Error agregando candidato ICE:', err);
+          }
+        }
       }
     }
   }
 
-  closePeer(peerId) {
-    const peer = this.peers.get(peerId);
-    if (peer) {
-      if (peer.dataChannel) {
-        peer.dataChannel.close();
+  /**
+   * Envía un evento a través de DataChannels
+   */
+  broadcastData(data) {
+    let sent = false;
+    const json = JSON.stringify(data);
+    for (const [peerId, peerObj] of this.peers.entries()) {
+      if (peerObj.dataChannel && peerObj.dataChannel.readyState === 'open') {
+        try {
+          peerObj.dataChannel.send(json);
+          sent = true;
+        } catch (e) {}
       }
-      if (peer.pc) {
-        peer.pc.close();
+    }
+    return sent;
+  }
+
+  closePeer(peerId) {
+    const peerObj = this.peers.get(peerId);
+    if (peerObj) {
+      if (peerObj.dataChannel) {
+        try { peerObj.dataChannel.close(); } catch (e) {}
+      }
+      if (peerObj.pc) {
+        try { peerObj.pc.close(); } catch (e) {}
       }
       this.peers.delete(peerId);
     }
