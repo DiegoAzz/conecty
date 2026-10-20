@@ -53,11 +53,12 @@ io.on('connection', (socket) => {
   let currentRoom = null;
   let currentUser = null;
 
-  socket.on('join-room', ({ roomId, userName }) => {
+  socket.on('join-room', ({ roomId, userName, deviceId }) => {
     currentRoom = roomId;
     currentUser = {
       id: socket.id,
       name: userName || 'Participante',
+      deviceId: deviceId || '',
       isScreenSharing: false,
       isAudioMuted: false
     };

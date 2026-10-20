@@ -172,6 +172,8 @@ class WebRTCManager {
         video: {
           cursor: 'always',
           displaySurface: 'monitor',
+          selfBrowserSurface: 'exclude', // Evita seleccionar accidentalmente la misma pestaña y previene el efecto espejo
+          surfaceSwitching: 'include',
           frameRate: { ideal: 60, max: 60 }
         },
         audio: true

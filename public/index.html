@@ -58,54 +58,130 @@
     .laser-ping {
       animation: ping-slow 1s cubic-bezier(0, 0, 0.2, 1) infinite;
     }
+    /* Ecualizador animado de voz */
+    @keyframes eq-wave {
+      0%, 100% { height: 4px; }
+      50% { height: 16px; }
+    }
+    .eq-bar-1 { animation: eq-wave 0.5s ease-in-out infinite; }
+    .eq-bar-2 { animation: eq-wave 0.7s ease-in-out infinite 0.15s; }
+    .eq-bar-3 { animation: eq-wave 0.4s ease-in-out infinite 0.3s; }
   </style>
 </head>
 <body class="h-full flex flex-col overflow-hidden select-none">
 
-  <!-- ================= VISTA DE LOBBY / INGRESO ================= -->
-  <div id="lobbyView" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
-    <div class="glass-panel w-full max-w-md p-8 rounded-3xl shadow-2xl border border-indigo-500/20 text-center relative overflow-hidden">
-      <!-- Glow superior -->
-      <div class="absolute -top-24 left-1/2 -translate-x-1/2 w-64 h-64 bg-indigo-600/30 rounded-full blur-3xl pointer-events-none"></div>
-
-      <!-- Logo & Título -->
-      <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600/20 text-indigo-400 mb-4 border border-indigo-500/30">
-        <i data-lucide="radio" class="w-8 h-8"></i>
+  <!-- ================= VISTA DE LOBBY / INGRESO (ESTILO ANYDESK CON ID FIJO) ================= -->
+  <div id="lobbyView" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/95 backdrop-blur-md overflow-y-auto custom-scrollbar">
+    <div class="w-full max-w-4xl py-6 flex flex-col items-center">
+      
+      <!-- Logo Superior -->
+      <div class="text-center mb-8 relative">
+        <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600/20 text-indigo-400 mb-3 border border-indigo-500/30 shadow-lg shadow-indigo-600/20">
+          <i data-lucide="radio" class="w-8 h-8"></i>
+        </div>
+        <h1 class="text-3xl font-extrabold tracking-tight text-white mb-1">Conecty</h1>
+        <p class="text-xs md:text-sm text-slate-400">Asistencia remota interactiva, llamadas de voz y pantalla compartida en tiempo real.</p>
       </div>
-      <h1 class="text-3xl font-extrabold tracking-tight text-white mb-2">Conecty</h1>
-      <p class="text-sm text-slate-400 mb-6">Asistencia remota interactiva, voz y pantalla compartida en tiempo real desde tu navegador.</p>
 
-      <form id="joinForm" class="space-y-4 text-left">
-        <div>
-          <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">Tu Nombre o Alias</label>
-          <div class="relative">
-            <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
-              <i data-lucide="user" class="w-4 h-4"></i>
-            </span>
-            <input type="text" id="userNameInput" required placeholder="Ej. Diego (Soporte)" class="w-full pl-10 pr-4 py-3 bg-slate-900/80 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition">
+      <!-- Cuadrícula Doble Estilo AnyDesk -->
+      <div class="w-full grid grid-cols-1 md:grid-cols-2 gap-6">
+
+        <!-- TARJETA 1: ESTE DISPOSITIVO (TU PUESTO DE TRABAJO CON ID FIJO) -->
+        <div class="glass-panel p-6 md:p-8 rounded-3xl border border-indigo-500/25 shadow-2xl relative overflow-hidden flex flex-col justify-between">
+          <div class="absolute -top-16 -left-16 w-48 h-48 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none"></div>
+
+          <div>
+            <div class="flex items-center justify-between mb-4">
+              <span class="text-xs font-bold tracking-wider text-indigo-400 uppercase flex items-center">
+                <i data-lucide="laptop" class="w-4 h-4 mr-1.5"></i> Este Dispositivo
+              </span>
+              <span class="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5 animate-pulse"></span>
+                Listo para Conexión
+              </span>
+            </div>
+
+            <p class="text-xs text-slate-400 mb-4">Tu dirección permanente para que otros se conecten a tu equipo:</p>
+
+            <!-- ID ÚNICO FIJO DE ESTE DISPOSITIVO (9 DÍGITOS) -->
+            <div class="p-4 rounded-2xl bg-slate-900/90 border border-slate-700/80 mb-5 relative group">
+              <div class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Tu Número Conecty</div>
+              <div class="flex items-center justify-between">
+                <div id="myDeviceIdDisplay" class="font-mono text-2xl md:text-3xl font-extrabold tracking-widest text-indigo-300">
+                  --- --- ---
+                </div>
+                <div class="flex items-center space-x-1.5">
+                  <button id="btnCopyMyId" class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition" title="Copiar ID numérico">
+                    <i data-lucide="copy" class="w-4 h-4"></i>
+                  </button>
+                  <button id="btnCopyMyDirectLink" class="p-2 rounded-xl bg-indigo-600/30 hover:bg-indigo-600 text-indigo-300 hover:text-white transition" title="Copiar enlace directo">
+                    <i data-lucide="link" class="w-4 h-4"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Nombre de usuario -->
+            <div class="mb-5 text-left">
+              <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">Tu Nombre o Alias</label>
+              <div class="relative">
+                <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
+                  <i data-lucide="user" class="w-4 h-4"></i>
+                </span>
+                <input type="text" id="userNameInput" required placeholder="Ej. Diego" class="w-full pl-10 pr-4 py-3 bg-slate-900/80 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition text-sm">
+              </div>
+            </div>
+          </div>
+
+          <button id="btnWaitConnection" class="w-full py-3.5 px-4 bg-slate-800 hover:bg-slate-700 text-white font-semibold rounded-xl border border-slate-700 transition flex items-center justify-center space-x-2 shadow-lg">
+            <i data-lucide="clock" class="w-4 h-4 text-indigo-400"></i>
+            <span>Abrir y Esperar Conexión</span>
+          </button>
+        </div>
+
+        <!-- TARJETA 2: OTRO DISPOSITIVO (CONECTAR A OTRA MÁQUINA) -->
+        <div class="glass-panel p-6 md:p-8 rounded-3xl border border-slate-800 shadow-2xl relative overflow-hidden flex flex-col justify-between">
+          <div class="absolute -top-16 -right-16 w-48 h-48 bg-emerald-600/10 rounded-full blur-3xl pointer-events-none"></div>
+
+          <div>
+            <div class="flex items-center justify-between mb-4">
+              <span class="text-xs font-bold tracking-wider text-slate-300 uppercase flex items-center">
+                <i data-lucide="remote-control" class="w-4 h-4 mr-1.5 text-emerald-400"></i> Conectar a Otro Dispositivo
+              </span>
+            </div>
+
+            <p class="text-xs text-slate-400 mb-4">Introduce el número permanente de 9 dígitos del equipo que deseas controlar o asistir:</p>
+
+            <form id="connectRemoteForm" class="space-y-5 text-left">
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">Número Conecty del Destino</label>
+                <div class="relative">
+                  <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
+                    <i data-lucide="hash" class="w-4 h-4"></i>
+                  </span>
+                  <input type="text" id="targetDeviceIdInput" required maxlength="11" placeholder="Ej. 492 839 104" class="w-full pl-10 pr-4 py-3.5 bg-slate-900/90 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition font-mono text-xl tracking-widest">
+                </div>
+              </div>
+
+              <div class="p-3.5 rounded-2xl bg-slate-900/40 border border-slate-800 text-[11px] text-slate-400 leading-relaxed">
+                💡 <strong class="text-slate-300">Conexión directa P2P</strong>: No requiere instalar nada ni tener la misma red Wi-Fi; funciona entre cualquier dispositivo por internet.
+              </div>
+
+              <button type="submit" id="btnConnectRemote" class="w-full py-3.5 px-4 bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white font-semibold rounded-xl shadow-lg shadow-indigo-600/30 transition flex items-center justify-center space-x-2">
+                <span>Conectar con este Dispositivo</span>
+                <i data-lucide="arrow-right" class="w-4 h-4"></i>
+              </button>
+            </form>
+          </div>
+
+          <div class="mt-6 pt-4 border-t border-slate-800 text-xs text-slate-500 flex items-center justify-center space-x-4">
+            <span class="flex items-center"><i data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-400 mr-1"></i> DTLS P2P</span>
+            <span class="flex items-center"><i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400 mr-1"></i> ID Fijo por Dispositivo</span>
           </div>
         </div>
 
-        <div>
-          <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">Código de Sala o Enlace</label>
-          <div class="relative">
-            <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
-              <i data-lucide="hash" class="w-4 h-4"></i>
-            </span>
-            <input type="text" id="roomCodeInput" placeholder="Ej. soporte-tecnico (o déjalo vacío para crear una)" class="w-full pl-10 pr-4 py-3 bg-slate-900/80 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition font-mono">
-          </div>
-        </div>
-
-        <button type="submit" id="btnJoin" class="w-full py-3.5 px-4 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-600 text-white font-semibold rounded-xl shadow-lg shadow-indigo-600/30 transition flex items-center justify-center space-x-2">
-          <span>Entrar a la Sala</span>
-          <i data-lucide="arrow-right" class="w-4 h-4"></i>
-        </button>
-      </form>
-
-      <div class="mt-6 pt-6 border-t border-slate-800 text-xs text-slate-500 flex items-center justify-center space-x-4">
-        <span class="flex items-center"><i data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-400 mr-1"></i> Cifrado DTLS P2P</span>
-        <span class="flex items-center"><i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400 mr-1"></i> Sin Descargas</span>
       </div>
+
     </div>
   </div>
 
@@ -133,6 +209,16 @@
       </div>
 
       <div class="flex items-center space-x-2 md:space-x-3">
+        <!-- Indicador Prominente de Llamada de Voz -->
+        <div id="voiceCallBadge" class="flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold">
+          <div class="flex items-center space-x-0.5 h-3">
+            <span class="w-1 bg-emerald-400 rounded-full eq-bar-1 h-3"></span>
+            <span class="w-1 bg-emerald-400 rounded-full eq-bar-2 h-4"></span>
+            <span class="w-1 bg-emerald-400 rounded-full eq-bar-3 h-2"></span>
+          </div>
+          <span>Voz: <strong id="voiceStatusText">Conectada</strong></span>
+        </div>
+
         <!-- Botón Copiar Enlace -->
         <button id="btnCopyInvite" class="px-3.5 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 flex items-center space-x-1.5 transition shadow-sm" title="Copiar enlace de invitación">
           <i data-lucide="link" class="w-3.5 h-3.5"></i>
@@ -174,12 +260,40 @@
           </div>
         </div>
 
-        <!-- Video de Pantalla Compartida Activa -->
-        <div id="videoWrapper" class="relative w-full h-full max-w-full max-h-full flex items-center justify-center hidden">
-          <video id="screenVideo" autoplay playsinline class="max-w-full max-h-full rounded-2xl shadow-2xl object-contain bg-black border border-slate-800"></video>
+        <!-- Panel Activo del Anfitrión (Anti-Modo Espejo) -->
+        <div id="sharerActiveCard" class="text-center p-8 max-w-lg glass-panel rounded-3xl border border-indigo-500/40 shadow-2xl relative hidden">
+          <div class="w-20 h-20 mx-auto rounded-3xl bg-emerald-950/60 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mb-5 shadow-inner">
+            <i data-lucide="cast" class="w-10 h-10 animate-pulse"></i>
+          </div>
+          <h2 class="text-xl font-bold text-white mb-2">Estás transmitiendo tu pantalla</h2>
+          <p class="text-sm text-slate-400 mb-6 leading-relaxed">
+            Tu pantalla se está transmitiendo en vivo a los demás participantes. Navega libremente a tus aplicaciones (código, escritorio, navegador); los demás pueden verla y guiarte con el puntero láser sin crear efecto espejo.
+          </p>
+          <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <button id="btnStopShareCard" class="w-full sm:w-auto px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white text-sm font-semibold rounded-xl shadow-lg shadow-rose-600/30 flex items-center justify-center space-x-2 transition">
+              <i data-lucide="screen-share-off" class="w-4 h-4"></i>
+              <span>Detener Transmisión</span>
+            </button>
+            <button id="btnTogglePipPreview" class="w-full sm:w-auto px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium rounded-xl border border-slate-700 flex items-center justify-center space-x-2 transition">
+              <i data-lucide="eye" class="w-4 h-4"></i>
+              <span id="pipBtnText">Ver Miniatura</span>
+            </button>
+          </div>
+          <!-- Miniatura colapsable opcional -->
+          <div id="pipPreviewContainer" class="mt-4 rounded-xl overflow-hidden border border-slate-700/80 hidden max-w-xs mx-auto shadow-lg">
+            <video id="pipVideo" autoplay playsinline muted class="w-full h-auto bg-black"></video>
+          </div>
+        </div>
+
+        <!-- Video de Pantalla Compartida Activa (Visor del Espectador) -->
+        <div id="videoWrapper" class="relative w-full h-full max-w-full max-h-full flex items-center justify-center overflow-hidden hidden">
           
-          <!-- Lienzo del Puntero Láser y Anotaciones Interactivas -->
-          <canvas id="laserCanvas" class="absolute inset-0 w-full h-full pointer-events-auto cursor-crosshair z-10"></canvas>
+          <!-- Contenedor con escala para soporte de Zoom -->
+          <div id="zoomContainer" class="relative w-full h-full flex items-center justify-center transition-transform duration-150 origin-center">
+            <video id="screenVideo" autoplay playsinline class="max-w-full max-h-full rounded-2xl shadow-2xl object-contain bg-black border border-slate-800 transition-all"></video>
+            <!-- Lienzo del Puntero Láser y Anotaciones Interactivas -->
+            <canvas id="laserCanvas" class="absolute inset-0 w-full h-full pointer-events-auto cursor-crosshair z-10"></canvas>
+          </div>
 
           <!-- Banner Informativo Sobre el Video -->
           <div id="sharerBanner" class="absolute top-4 left-4 z-20 px-3.5 py-1.5 rounded-xl glass-panel text-xs text-white flex items-center space-x-2 border border-slate-700/80 shadow-lg">
@@ -187,8 +301,46 @@
             <span id="sharerNameText">Pantalla de: Usuario</span>
           </div>
 
+          <!-- Barra de Controles de Tamaño de Pantalla & Zoom -->
+          <div id="screenControlsBar" class="absolute top-4 right-4 z-20 flex items-center space-x-1.5 p-1.5 rounded-2xl glass-panel border border-slate-700/80 shadow-2xl">
+            <!-- Botón Ajustar (Fit) -->
+            <button id="btnFitScreen" class="px-2.5 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-500 transition flex items-center space-x-1" title="Ajustar pantalla completa">
+              <i data-lucide="minimize-2" class="w-3.5 h-3.5"></i>
+              <span class="hidden sm:inline">Ajustar</span>
+            </button>
+
+            <!-- Botón Llenar (Fill / Estirar) -->
+            <button id="btnFillScreen" class="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition flex items-center space-x-1" title="Llenar todo el espacio">
+              <i data-lucide="maximize-2" class="w-3.5 h-3.5"></i>
+              <span class="hidden sm:inline">Llenar</span>
+            </button>
+
+            <!-- Botón 1:1 Original -->
+            <button id="btnOriginalScreen" class="px-2 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition" title="Resolución Original (100%)">
+              <span class="font-mono text-[11px] font-bold">1:1</span>
+            </button>
+
+            <div class="h-4 w-px bg-slate-700 mx-0.5"></div>
+
+            <!-- Controles de Zoom -->
+            <button id="btnZoomOut" class="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition" title="Reducir Zoom">
+              <i data-lucide="zoom-out" class="w-3.5 h-3.5"></i>
+            </button>
+            <span id="zoomLevelText" class="text-[11px] font-mono text-slate-300 px-1 font-semibold select-none">100%</span>
+            <button id="btnZoomIn" class="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition" title="Aumentar Zoom">
+              <i data-lucide="zoom-in" class="w-3.5 h-3.5"></i>
+            </button>
+
+            <div class="h-4 w-px bg-slate-700 mx-0.5"></div>
+
+            <!-- Botón Pantalla Completa (Fullscreen) -->
+            <button id="btnFullscreen" class="p-1.5 rounded-xl bg-indigo-600/30 hover:bg-indigo-600 text-indigo-300 hover:text-white text-xs transition border border-indigo-500/40" title="Pantalla Completa (F)">
+              <i data-lucide="expand" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+
           <!-- Indicador de Modo Puntero Activo -->
-          <div id="pointerModeIndicator" class="absolute top-4 right-4 z-20 px-3 py-1.5 rounded-xl bg-indigo-600/80 backdrop-blur-md text-xs text-white font-medium flex items-center space-x-2 shadow-lg">
+          <div id="pointerModeIndicator" class="absolute bottom-4 right-4 z-20 px-3 py-1.5 rounded-xl bg-indigo-600/80 backdrop-blur-md text-xs text-white font-medium flex items-center space-x-2 shadow-lg">
             <span class="w-2 h-2 rounded-full bg-red-400 laser-ping"></span>
             <span>Puntero Láser Activo</span>
           </div>
@@ -241,6 +393,11 @@
           <i data-lucide="mic" id="micIcon" class="w-4 h-4 text-emerald-400"></i>
           <span id="micText" class="hidden sm:inline">Micrófono</span>
         </button>
+        <!-- Probar Audio / Altavoces -->
+        <button id="btnTestAudio" class="h-12 px-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-indigo-400 font-medium text-xs flex items-center space-x-1.5 border border-slate-700 transition" title="Probar sonido de altavoces">
+          <i data-lucide="volume-2" class="w-4 h-4"></i>
+          <span class="hidden md:inline">Probar Audio</span>
+        </button>
       </div>
 
       <!-- Controles Centrales (Pantalla, Láser, Interacción) -->
@@ -287,8 +444,8 @@
   <!-- Toast de Notificaciones -->
   <div id="toastContainer" class="fixed top-20 right-6 z-50 flex flex-col space-y-2 pointer-events-none"></div>
 
-  <!-- Reproductor de Audio Oculto para Streams Remotos -->
-  <div id="remoteAudios" class="hidden"></div>
+  <!-- Contenedor de Audio Remoto (fuera de pantalla para evitar suspensión de audio en navegadores) -->
+  <div id="remoteAudios" style="position: fixed; bottom: -9999px; left: -9999px; width: 1px; height: 1px; opacity: 0; pointer-events: none;"></div>
 
   <!-- Scripts -->
   <script src="/socket.io/socket.io.js"></script>

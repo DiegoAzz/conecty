@@ -1,29 +1,58 @@
 /**
  * Conecty - Aplicación Principal y Control de Estado UI
+ * Modelo AnyDesk: ID Fijo de 9 dígitos por dispositivo, Anti-Modo Espejo,
+ * Controles de tamaño de pantalla, y visualización en tiempo real de llamadas de voz.
  */
 
 document.addEventListener('DOMContentLoaded', async () => {
-  // Elementos DOM
+  // Elementos DOM del Lobby
   const lobbyView = document.getElementById('lobbyView');
-  const roomView = document.getElementById('roomView');
-  const joinForm = document.getElementById('joinForm');
+  const myDeviceIdDisplay = document.getElementById('myDeviceIdDisplay');
+  const btnCopyMyId = document.getElementById('btnCopyMyId');
+  const btnCopyMyDirectLink = document.getElementById('btnCopyMyDirectLink');
   const userNameInput = document.getElementById('userNameInput');
-  const roomCodeInput = document.getElementById('roomCodeInput');
+  const btnWaitConnection = document.getElementById('btnWaitConnection');
 
+  const connectRemoteForm = document.getElementById('connectRemoteForm');
+  const targetDeviceIdInput = document.getElementById('targetDeviceIdInput');
+
+  // Elementos DOM de la Sala
+  const roomView = document.getElementById('roomView');
   const headerRoomId = document.getElementById('headerRoomId');
   const participantsCount = document.getElementById('participantsCount');
   const participantsBar = document.getElementById('participantsBar');
+  const voiceCallBadge = document.getElementById('voiceCallBadge');
+  const voiceStatusText = document.getElementById('voiceStatusText');
 
   const idleScreen = document.getElementById('idleScreen');
+  const sharerActiveCard = document.getElementById('sharerActiveCard');
+  const btnStopShareCard = document.getElementById('btnStopShareCard');
+  const btnTogglePipPreview = document.getElementById('btnTogglePipPreview');
+  const pipPreviewContainer = document.getElementById('pipPreviewContainer');
+  const pipVideo = document.getElementById('pipVideo');
+  const pipBtnText = document.getElementById('pipBtnText');
+
   const videoWrapper = document.getElementById('videoWrapper');
+  const zoomContainer = document.getElementById('zoomContainer');
   const screenVideo = document.getElementById('screenVideo');
   const laserCanvas = document.getElementById('laserCanvas');
   const sharerNameText = document.getElementById('sharerNameText');
   const pointerModeIndicator = document.getElementById('pointerModeIndicator');
 
+  // Controles de Tamaño de Pantalla & Zoom
+  const btnFitScreen = document.getElementById('btnFitScreen');
+  const btnFillScreen = document.getElementById('btnFillScreen');
+  const btnOriginalScreen = document.getElementById('btnOriginalScreen');
+  const btnZoomOut = document.getElementById('btnZoomOut');
+  const btnZoomIn = document.getElementById('btnZoomIn');
+  const zoomLevelText = document.getElementById('zoomLevelText');
+  const btnFullscreen = document.getElementById('btnFullscreen');
+
+  // Barra de Controles Inferior (Dock)
   const btnToggleMic = document.getElementById('btnToggleMic');
   const micIcon = document.getElementById('micIcon');
   const micText = document.getElementById('micText');
+  const btnTestAudio = document.getElementById('btnTestAudio');
 
   const btnToggleScreen = document.getElementById('btnToggleScreen');
   const screenText = document.getElementById('screenText');
@@ -46,7 +75,71 @@ document.addEventListener('DOMContentLoaded', async () => {
   const remoteAudios = document.getElementById('remoteAudios');
   const toastContainer = document.getElementById('toastContainer');
 
-  // Estado Local
+  // ================= 1. GESTIÓN DE ID FIJO DE DISPOSITIVO (ESTILO ANYDESK) =================
+  let myDeviceId = localStorage.getItem('conecty_device_id');
+  if (!myDeviceId || myDeviceId.length !== 9 || !/^\d+$/.test(myDeviceId)) {
+    // Generar un número único permanente de 9 dígitos para esta máquina
+    myDeviceId = Math.floor(100000000 + Math.random() * 900000000).toString();
+    localStorage.setItem('conecty_device_id', myDeviceId);
+  }
+
+  function formatDeviceId(id) {
+    if (!id) return '';
+    const clean = id.toString().replace(/\D/g, '');
+    if (clean.length === 9) {
+      return clean.replace(/(\d{3})(\d{3})(\d{3})/, '$1 $2 $3');
+    }
+    return id;
+  }
+
+  myDeviceIdDisplay.textContent = formatDeviceId(myDeviceId);
+
+  // Recordar nombre del usuario en este navegador
+  const savedUserName = localStorage.getItem('conecty_user_name');
+  if (savedUserName) {
+    userNameInput.value = savedUserName;
+  } else {
+    userNameInput.value = 'Usuario-' + myDeviceId.substring(0, 4);
+  }
+
+  // Formateo automático al escribir en el campo de destino (XXX XXX XXX)
+  targetDeviceIdInput.addEventListener('input', (e) => {
+    let digits = e.target.value.replace(/\D/g, '').substring(0, 9);
+    if (digits.length > 6) {
+      e.target.value = digits.substring(0, 3) + ' ' + digits.substring(3, 6) + ' ' + digits.substring(6);
+    } else if (digits.length > 3) {
+      e.target.value = digits.substring(0, 3) + ' ' + digits.substring(3);
+    } else {
+      e.target.value = digits;
+    }
+  });
+
+  // Copiar Mi ID Numérico
+  btnCopyMyId.addEventListener('click', () => {
+    navigator.clipboard.writeText(formatDeviceId(myDeviceId)).then(() => {
+      showToast('📋 Número de tu dispositivo copiado: ' + formatDeviceId(myDeviceId), 'success');
+    });
+  });
+
+  // Copiar Enlace Directo
+  btnCopyMyDirectLink.addEventListener('click', () => {
+    const directUrl = `${window.location.origin}/?connect=${myDeviceId}`;
+    navigator.clipboard.writeText(directUrl).then(() => {
+      showToast('🔗 Enlace directo copiado para compartir', 'success');
+    });
+  });
+
+  // Pre-llenar si viene en la URL (?connect=xxx o ?id=xxx o ?room=xxx)
+  const urlParams = new URLSearchParams(window.location.search);
+  const connectParam = urlParams.get('connect') || urlParams.get('id');
+  const roomParam = urlParams.get('room');
+  if (connectParam) {
+    targetDeviceIdInput.value = formatDeviceId(connectParam);
+  } else if (roomParam) {
+    targetDeviceIdInput.value = roomParam;
+  }
+
+  // ================= 2. ESTADO LOCAL Y RECURSOS =================
   let socket = null;
   let webrtc = null;
   let laser = null;
@@ -56,6 +149,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let unreadChatCount = 0;
   let isChatOpen = false;
 
+  // Participantes: Map(id -> { name, deviceId, isScreenSharing, isAudioMuted, isSpeaking: false })
   const participants = new Map();
 
   // Sintetizador de Sonidos (Web Audio API)
@@ -64,6 +158,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     init() {
       if (!this.ctx) {
         this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (this.ctx.state === 'suspended') {
+        this.ctx.resume();
       }
     },
     playTone(freq, type = 'sine', duration = 0.15) {
@@ -91,12 +188,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     },
     message() {
       this.playTone(880, 'triangle', 0.1);
+    },
+    testChime() {
+      // Secuencia armónica Do-Mi-Sol para probar altavoces
+      this.playTone(523.25, 'sine', 0.2);
+      setTimeout(() => this.playTone(659.25, 'sine', 0.2), 150);
+      setTimeout(() => this.playTone(783.99, 'sine', 0.35), 300);
     }
   };
 
-  // Toast Notification (reemplaza el anterior para evitar acumulación y spam)
+  btnTestAudio.addEventListener('click', () => {
+    soundEffects.testChime();
+    showToast('🔊 Sonido de prueba reproducido. Si lo escuchas, tus altavoces funcionan.', 'info');
+  });
+
+  // Toast Notification (elimina el anterior para evitar spam o redundancia)
   function showToast(message, type = 'info') {
-    toastContainer.innerHTML = ''; // Limpiar mensaje anterior
+    toastContainer.innerHTML = '';
     const toast = document.createElement('div');
     const borderCol = type === 'success' ? 'border-emerald-500/40 text-emerald-300' : 'border-indigo-500/40 text-indigo-200';
     toast.className = `px-4 py-2.5 rounded-xl glass-panel border ${borderCol} text-xs shadow-xl flex items-center space-x-2 transition-all duration-300 transform translate-y-2 opacity-0 pointer-events-auto`;
@@ -110,17 +218,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => {
       toast.classList.add('opacity-0', 'translate-y-2');
       setTimeout(() => toast.remove(), 250);
-    }, 2200);
+    }, 2500);
   }
 
-  // Prellenar código de sala desde URL
-  const urlParams = new URLSearchParams(window.location.search);
-  const roomFromQuery = urlParams.get('room') || window.location.pathname.replace(/^\/room\//, '').replace(/^\//, '');
-  if (roomFromQuery && roomFromQuery !== '') {
-    roomCodeInput.value = roomFromQuery;
-  }
-
-  // Obtener servidores STUN/TURN
+  // Servidores STUN/TURN
   let iceServers = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
@@ -132,37 +233,50 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (configData.iceServers && configData.iceServers.length > 0) {
       iceServers = configData.iceServers;
     }
-  } catch (e) {
-    console.warn('Usando STUN por defecto');
-  }
+  } catch (e) {}
 
-  // Formulario de Ingreso
-  joinForm.addEventListener('submit', async (e) => {
+  // ================= 3. INICIO DE SESIÓN / CONEXIÓN =================
+  // Opción A: Esperar conexión en mi propio número permanente
+  btnWaitConnection.addEventListener('click', async () => {
+    const name = userNameInput.value.trim() || 'Usuario-' + myDeviceId.substring(0, 4);
+    localStorage.setItem('conecty_user_name', name);
+    await startSession(name, 'device-' + myDeviceId);
+  });
+
+  // Opción B: Conectar a otro número permanente
+  connectRemoteForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const userName = userNameInput.value.trim();
-    let roomCode = roomCodeInput.value.trim().toLowerCase();
+    const name = userNameInput.value.trim() || 'Usuario-' + myDeviceId.substring(0, 4);
+    localStorage.setItem('conecty_user_name', name);
 
-    if (!roomCode) {
-      roomCode = 'conecty-' + Math.floor(100000 + Math.random() * 900000);
+    let targetRaw = targetDeviceIdInput.value.replace(/\D/g, '');
+    if (!targetRaw) {
+      targetRaw = targetDeviceIdInput.value.trim().toLowerCase();
+    }
+    if (!targetRaw) {
+      showToast('Por favor introduce el número de 9 dígitos del destino', 'info');
+      return;
     }
 
-    await startSession(userName, roomCode);
+    const roomId = targetRaw.startsWith('device-') ? targetRaw : (targetRaw.length === 9 ? 'device-' + targetRaw : targetRaw);
+    await startSession(name, roomId);
   });
 
   async function startSession(userName, roomId) {
     currentRoomId = roomId;
-    headerRoomId.textContent = roomId;
+    const cleanRoomDisplay = roomId.replace(/^device-/, '');
+    headerRoomId.textContent = formatDeviceId(cleanRoomDisplay);
 
-    const newUrl = `${window.location.origin}/?room=${roomId}`;
+    const newUrl = `${window.location.origin}/?connect=${cleanRoomDisplay}`;
     window.history.pushState({ path: newUrl }, '', newUrl);
 
-    // Conectar a Socket.io con WebSockets directo (mínima latencia)
+    // Conexión WebSockets instantánea
     socket = io({
       transports: ['websocket'],
       upgrade: false
     });
 
-    // Controlador de puntero láser
+    // Controlador Láser
     laser = new LaserController(laserCanvas, screenVideo, (pointerData) => {
       const sentP2P = webrtc ? webrtc.broadcastData({ type: 'laser', ...pointerData }) : false;
       if (!sentP2P && socket) {
@@ -196,46 +310,93 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
 
-    // 1. Inicializar micrófono local ANTES de unirse a la sala
+    // Inicializar micrófono local para la llamada antes de unirse
     const audioStream = await webrtc.initLocalAudio();
     if (audioStream) {
-      showToast('🎙️ Micrófono activado para la llamada', 'success');
-      monitorMicrophoneActivity(audioStream);
+      showToast('🎙️ Micrófono listo y llamada de voz activa', 'success');
+      monitorLocalVoice(audioStream);
     } else {
       showToast('⚠️ No se detectó micrófono. Podrás escuchar la llamada.', 'info');
     }
 
-    // 2. Configurar eventos de sockets
     setupSocketEvents();
 
-    // 3. Emitir ingreso a la sala
-    socket.emit('join-room', { roomId, userName });
+    socket.emit('join-room', {
+      roomId,
+      userName,
+      deviceId: myDeviceId
+    });
 
     lobbyView.classList.add('hidden');
     roomView.classList.remove('hidden');
 
     soundEffects.join();
-    showToast(`Te uniste a la sala ${roomId}`, 'success');
+    showToast(`Conectado al puesto ${formatDeviceId(cleanRoomDisplay)}`, 'success');
   }
 
-  function monitorMicrophoneActivity(stream) {
+  // Monitor del micrófono local para ver cuándo hablo
+  function monitorLocalVoice(stream) {
     try {
       const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       const source = audioCtx.createMediaStreamSource(stream);
       const analyser = audioCtx.createAnalyser();
       analyser.fftSize = 64;
       source.connect(analyser);
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      const data = new Uint8Array(analyser.frequencyBinCount);
 
       const check = () => {
-        analyser.getByteFrequencyData(dataArray);
+        analyser.getByteFrequencyData(data);
         let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
-        const avg = sum / dataArray.length;
-        if (avg > 18 && (!webrtc || !webrtc.isMicMuted)) {
-          micIcon.classList.add('text-emerald-300', 'scale-110');
-        } else {
-          micIcon.classList.remove('scale-110');
+        for (let i = 0; i < data.length; i++) sum += data[i];
+        const avg = sum / data.length;
+        const isSpeaking = avg > 14 && (!webrtc || !webrtc.isMicMuted);
+
+        const myCard = document.getElementById('myParticipantCard');
+        if (myCard) {
+          if (isSpeaking) {
+            myCard.classList.add('ring-2', 'ring-emerald-400');
+            const eq = myCard.querySelector('.voice-eq');
+            if (eq) eq.classList.remove('opacity-25');
+          } else {
+            myCard.classList.remove('ring-2', 'ring-emerald-400');
+            const eq = myCard.querySelector('.voice-eq');
+            if (eq) eq.classList.add('opacity-25');
+          }
+        }
+        requestAnimationFrame(check);
+      };
+      check();
+    } catch (e) {}
+  }
+
+  // Monitor de audio remoto para ver cuándo habla el compañero
+  function monitorRemoteVoice(peerId, stream) {
+    try {
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioCtx.createMediaStreamSource(stream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 64;
+      source.connect(analyser);
+      const data = new Uint8Array(analyser.frequencyBinCount);
+
+      const check = () => {
+        analyser.getByteFrequencyData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) sum += data[i];
+        const avg = sum / data.length;
+        const isSpeaking = avg > 14;
+
+        const peerCard = document.getElementById(`peerCard-${peerId}`);
+        if (peerCard) {
+          if (isSpeaking) {
+            peerCard.classList.add('ring-2', 'ring-emerald-400');
+            const eq = peerCard.querySelector('.voice-eq');
+            if (eq) eq.classList.remove('opacity-25');
+          } else {
+            peerCard.classList.remove('ring-2', 'ring-emerald-400');
+            const eq = peerCard.querySelector('.voice-eq');
+            if (eq) eq.classList.add('opacity-25');
+          }
         }
         requestAnimationFrame(check);
       };
@@ -248,7 +409,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       myUser = user;
       updateParticipantsList(existingUsers);
 
-      // Iniciar oferta WebRTC hacia cada participante existente
       existingUsers.forEach((existing) => {
         if (existing.id !== socket.id) {
           webrtc.createOffer(existing.id);
@@ -258,11 +418,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     socket.on('user-connected', (user) => {
       soundEffects.join();
-      showToast(`${user.name} se unió a la sala`, 'info');
+      showToast(`${user.name} se conectó a la sesión`, 'info');
       participants.set(user.id, user);
       renderParticipants();
 
-      // Si yo ya estoy compartiendo pantalla, compartirla con el nuevo participante
       if (isSharingScreen && webrtc.localScreenStream) {
         const peerObj = webrtc.getOrCreatePeer(user.id, true);
         webrtc.localScreenStream.getTracks().forEach((track) => {
@@ -313,12 +472,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     socket.on('user-disconnected', ({ userId, userName }) => {
       soundEffects.leave();
-      showToast(`${userName} salió de la sala`, 'info');
+      showToast(`${userName} se desconectó`, 'info');
       webrtc.closePeer(userId);
       removeParticipant(userId);
     });
   }
 
+  // Manejo de Audio Remoto
   function handleRemoteAudio(peerId, stream) {
     let audioElement = document.getElementById(`audio-${peerId}`);
     if (!audioElement) {
@@ -330,20 +490,120 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     audioElement.srcObject = stream;
     audioElement.play().catch((e) => {
-      console.warn('Autoplay bloqueado esperando interacción del usuario:', e);
+      console.warn('Autoplay bloqueado esperando interacción:', e);
       const unlockAudio = () => {
         audioElement.play().catch(() => {});
         window.removeEventListener('click', unlockAudio);
       };
       window.addEventListener('click', unlockAudio);
     });
+
+    monitorRemoteVoice(peerId, stream);
   }
+
+  // ================= 4. CONTROLES DE PANTALLA & MODO ANTI-ESPEJO =================
+  let currentZoom = 1.0;
+  let currentFitMode = 'contain';
+
+  function updateScreenDisplay() {
+    if (zoomContainer) {
+      zoomContainer.style.transform = `scale(${currentZoom})`;
+    }
+    if (zoomLevelText) {
+      zoomLevelText.textContent = `${Math.round(currentZoom * 100)}%`;
+    }
+
+    if (currentFitMode === 'contain') {
+      screenVideo.className = 'max-w-full max-h-full rounded-2xl shadow-2xl object-contain bg-black border border-slate-800 transition-all';
+      btnFitScreen.className = 'px-2.5 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-500 transition flex items-center space-x-1';
+      btnFillScreen.className = 'px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition flex items-center space-x-1';
+      btnOriginalScreen.className = 'px-2 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition';
+    } else if (currentFitMode === 'fill') {
+      screenVideo.className = 'w-full h-full rounded-2xl shadow-2xl object-fill bg-black border border-slate-800 transition-all';
+      btnFitScreen.className = 'px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition flex items-center space-x-1';
+      btnFillScreen.className = 'px-2.5 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-500 transition flex items-center space-x-1';
+      btnOriginalScreen.className = 'px-2 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition';
+    } else if (currentFitMode === 'original') {
+      screenVideo.className = 'rounded-2xl shadow-2xl bg-black border border-slate-800 transition-all';
+      btnFitScreen.className = 'px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition flex items-center space-x-1';
+      btnFillScreen.className = 'px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition flex items-center space-x-1';
+      btnOriginalScreen.className = 'px-2 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-500 transition';
+    }
+
+    if (laser) {
+      laser.resizeCanvas();
+    }
+  }
+
+  btnFitScreen.addEventListener('click', () => {
+    currentFitMode = 'contain';
+    currentZoom = 1.0;
+    updateScreenDisplay();
+  });
+
+  btnFillScreen.addEventListener('click', () => {
+    currentFitMode = 'fill';
+    currentZoom = 1.0;
+    updateScreenDisplay();
+  });
+
+  btnOriginalScreen.addEventListener('click', () => {
+    currentFitMode = 'original';
+    currentZoom = 1.0;
+    updateScreenDisplay();
+  });
+
+  btnZoomIn.addEventListener('click', () => {
+    if (currentZoom < 2.5) {
+      currentZoom = +(currentZoom + 0.25).toFixed(2);
+      updateScreenDisplay();
+    }
+  });
+
+  btnZoomOut.addEventListener('click', () => {
+    if (currentZoom > 0.5) {
+      currentZoom = +(currentZoom - 0.25).toFixed(2);
+      updateScreenDisplay();
+    }
+  });
+
+  btnFullscreen.addEventListener('click', () => {
+    if (!document.fullscreenElement) {
+      videoWrapper.requestFullscreen().catch((err) => console.warn(err));
+    } else {
+      document.exitFullscreen().catch((err) => console.warn(err));
+    }
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.key === 'f' || e.key === 'F') {
+      btnFullscreen.click();
+    }
+  });
+
+  // Miniatura PiP opcional
+  let isPipOpen = false;
+  btnTogglePipPreview.addEventListener('click', () => {
+    isPipOpen = !isPipOpen;
+    if (isPipOpen) {
+      pipPreviewContainer.classList.remove('hidden');
+      pipBtnText.textContent = 'Ocultar Miniatura';
+      if (webrtc && webrtc.localScreenStream) {
+        pipVideo.srcObject = webrtc.localScreenStream;
+      }
+    } else {
+      pipPreviewContainer.classList.add('hidden');
+      pipBtnText.textContent = 'Ver Miniatura';
+    }
+  });
+
+  btnStopShareCard.addEventListener('click', () => toggleScreenShare());
 
   function handleRemoteVideo(peerId, stream) {
     const user = participants.get(peerId);
     sharerNameText.textContent = `Pantalla de: ${user ? user.name : 'Compañero'}`;
 
-    // Silenciar y configurar para mínima latencia en reproducción
     screenVideo.muted = true;
     if ('latencyHint' in screenVideo) {
       screenVideo.latencyHint = 0;
@@ -352,25 +612,39 @@ document.addEventListener('DOMContentLoaded', async () => {
     screenVideo.play().catch((e) => console.warn('Error al reproducir video:', e));
 
     idleScreen.classList.add('hidden');
+    sharerActiveCard.classList.add('hidden');
     videoWrapper.classList.remove('hidden');
+
+    currentZoom = 1.0;
+    currentFitMode = 'contain';
+    updateScreenDisplay();
+
     laser.clearCanvas();
     laser.resizeCanvas();
     showToast(`Mostrando pantalla de ${user ? user.name : 'compañero'}`, 'success');
   }
 
   function checkScreenSharingState() {
-    let anyoneSharing = isSharingScreen;
+    let remoteSharing = false;
     for (const user of participants.values()) {
       if (user.isScreenSharing) {
-        anyoneSharing = true;
+        remoteSharing = true;
         break;
       }
     }
-    if (!anyoneSharing) {
+
+    if (!remoteSharing) {
       screenVideo.srcObject = null;
       videoWrapper.classList.add('hidden');
-      idleScreen.classList.remove('hidden');
       laser.clearCanvas();
+
+      if (isSharingScreen) {
+        sharerActiveCard.classList.remove('hidden');
+        idleScreen.classList.add('hidden');
+      } else {
+        sharerActiveCard.classList.add('hidden');
+        idleScreen.classList.remove('hidden');
+      }
     }
   }
 
@@ -388,38 +662,67 @@ document.addEventListener('DOMContentLoaded', async () => {
     checkScreenSharingState();
   }
 
+  // ================= 5. TARJETAS DE LLAMADA DE VOZ Y PARTICIPANTES =================
   function renderParticipants() {
     const totalCount = participants.size + 1;
-    participantsCount.textContent = `${totalCount} participante${totalCount > 1 ? 's' : ''}`;
+    participantsCount.textContent = `${totalCount} en sesión`;
 
     participantsBar.innerHTML = '';
 
-    // Mi avatar
-    const myTag = document.createElement('div');
-    myTag.className = 'px-3 py-1.5 rounded-xl glass-panel border border-slate-700/60 text-xs text-white flex items-center space-x-2 shrink-0';
-    myTag.innerHTML = `
-      <span class="w-2 h-2 rounded-full ${webrtc && webrtc.isMicMuted ? 'bg-rose-500' : 'bg-emerald-400 animate-pulse'}"></span>
-      <span class="font-medium">${myUser ? myUser.name : 'Tú'} (Tú)</span>
-      ${isSharingScreen ? '<i data-lucide="monitor" class="w-3 h-3 text-indigo-400"></i>' : ''}
+    // Mi Tarjeta de Llamada con Ecualizador
+    const myCard = document.createElement('div');
+    myCard.id = 'myParticipantCard';
+    myCard.className = 'px-3.5 py-2 rounded-2xl glass-panel border border-slate-700/70 text-xs text-white flex items-center space-x-2.5 shrink-0 shadow-lg transition-all duration-200';
+    myCard.innerHTML = `
+      <div class="w-7 h-7 rounded-xl bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center font-bold text-[10px] text-indigo-300">
+        ${(myUser ? myUser.name : 'Tú').substring(0, 2).toUpperCase()}
+      </div>
+      <div>
+        <div class="font-semibold flex items-center space-x-1.5">
+          <span>${myUser ? myUser.name : 'Tú'} (Tú)</span>
+          ${isSharingScreen ? '<i data-lucide="monitor" class="w-3 h-3 text-indigo-400"></i>' : ''}
+        </div>
+        <div class="text-[10px] text-slate-400 font-mono">ID: ${formatDeviceId(myDeviceId)}</div>
+      </div>
+      <!-- Ecualizador de Voz -->
+      <div class="voice-eq flex items-center space-x-0.5 h-3.5 px-1 opacity-25 transition-opacity">
+        <span class="w-1 bg-emerald-400 rounded-full eq-bar-1 h-2"></span>
+        <span class="w-1 bg-emerald-400 rounded-full eq-bar-2 h-3.5"></span>
+        <span class="w-1 bg-emerald-400 rounded-full eq-bar-3 h-1.5"></span>
+      </div>
     `;
-    participantsBar.appendChild(myTag);
+    participantsBar.appendChild(myCard);
 
-    // Avatares remotos
+    // Tarjetas de Participantes Remotos
     participants.forEach((user) => {
-      const tag = document.createElement('div');
-      tag.className = 'px-3 py-1.5 rounded-xl glass-panel border border-slate-700/60 text-xs text-slate-300 flex items-center space-x-2 shrink-0';
-      tag.innerHTML = `
-        <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
-        <span class="font-medium">${user.name}</span>
-        ${user.isScreenSharing ? '<i data-lucide="monitor" class="w-3 h-3 text-indigo-400"></i>' : ''}
+      const peerCard = document.createElement('div');
+      peerCard.id = `peerCard-${user.id}`;
+      peerCard.className = 'px-3.5 py-2 rounded-2xl glass-panel border border-slate-700/70 text-xs text-slate-200 flex items-center space-x-2.5 shrink-0 shadow-lg transition-all duration-200';
+      peerCard.innerHTML = `
+        <div class="w-7 h-7 rounded-xl bg-emerald-600/30 border border-emerald-500/40 flex items-center justify-center font-bold text-[10px] text-emerald-300">
+          ${user.name.substring(0, 2).toUpperCase()}
+        </div>
+        <div>
+          <div class="font-semibold flex items-center space-x-1.5">
+            <span>${user.name}</span>
+            ${user.isScreenSharing ? '<i data-lucide="monitor" class="w-3 h-3 text-indigo-400"></i>' : ''}
+          </div>
+          <div class="text-[10px] text-slate-400 font-mono">Conectado</div>
+        </div>
+        <!-- Ecualizador de Voz Remoto -->
+        <div class="voice-eq flex items-center space-x-0.5 h-3.5 px-1 opacity-25 transition-opacity">
+          <span class="w-1 bg-emerald-400 rounded-full eq-bar-1 h-2"></span>
+          <span class="w-1 bg-emerald-400 rounded-full eq-bar-2 h-3.5"></span>
+          <span class="w-1 bg-emerald-400 rounded-full eq-bar-3 h-1.5"></span>
+        </div>
       `;
-      participantsBar.appendChild(tag);
+      participantsBar.appendChild(peerCard);
     });
 
     if (window.lucide) lucide.createIcons();
   }
 
-  // Compartir Pantalla
+  // Compartir Pantalla con Protección Anti-Espejo
   async function toggleScreenShare() {
     if (isSharingScreen) {
       await webrtc.stopScreenShare();
@@ -427,6 +730,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       screenText.textContent = 'Compartir Pantalla';
       btnToggleScreen.classList.remove('bg-rose-600', 'hover:bg-rose-500');
       btnToggleScreen.classList.add('bg-indigo-600', 'hover:bg-indigo-500');
+
+      sharerActiveCard.classList.add('hidden');
+      pipPreviewContainer.classList.add('hidden');
+      isPipOpen = false;
+      pipBtnText.textContent = 'Ver Miniatura';
+      pipVideo.srcObject = null;
+
       socket.emit('screen-share-status', { isSharing: false });
       checkScreenSharingState();
       showToast('Dejaste de compartir pantalla', 'info');
@@ -436,6 +746,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         screenText.textContent = 'Compartir Pantalla';
         btnToggleScreen.classList.remove('bg-rose-600', 'hover:bg-rose-500');
         btnToggleScreen.classList.add('bg-indigo-600', 'hover:bg-indigo-500');
+
+        sharerActiveCard.classList.add('hidden');
+        pipPreviewContainer.classList.add('hidden');
+        isPipOpen = false;
+        pipBtnText.textContent = 'Ver Miniatura';
+        pipVideo.srcObject = null;
+
         socket.emit('screen-share-status', { isSharing: false });
         checkScreenSharingState();
       });
@@ -446,16 +763,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         btnToggleScreen.classList.remove('bg-indigo-600', 'hover:bg-indigo-500');
         btnToggleScreen.classList.add('bg-rose-600', 'hover:bg-rose-500');
 
-        screenVideo.muted = true;
-        screenVideo.srcObject = stream;
-        sharerNameText.textContent = `Compartiendo tu pantalla (${myUser ? myUser.name : 'Tú'})`;
+        // MODO ANTI-ESPEJO ACTIVO:
         idleScreen.classList.add('hidden');
-        videoWrapper.classList.remove('hidden');
-        laser.clearCanvas();
-        laser.resizeCanvas();
+        videoWrapper.classList.add('hidden');
+        sharerActiveCard.classList.remove('hidden');
 
         socket.emit('screen-share-status', { isSharing: true });
-        showToast('Estás transmitiendo tu pantalla a los participantes', 'success');
+        showToast('Transmitiendo en vivo (Modo Anti-Espejo activo)', 'success');
       }
     }
     renderParticipants();
@@ -464,7 +778,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   btnToggleScreen.addEventListener('click', toggleScreenShare);
   btnStartShareIdle.addEventListener('click', toggleScreenShare);
 
-  // Silenciar / Activar Micrófono (sin toasts redundantes)
+  // Silenciar / Activar Micrófono
   btnToggleMic.addEventListener('click', () => {
     if (!webrtc) return;
     const isUnmuted = webrtc.toggleMicrophone();
@@ -507,9 +821,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Enlace de Invitación
   function copyInviteLink() {
-    const inviteUrl = `${window.location.origin}/?room=${currentRoomId}`;
+    const inviteUrl = `${window.location.origin}/?connect=${myDeviceId}`;
     navigator.clipboard.writeText(inviteUrl).then(() => {
-      showToast('📋 Enlace de sala copiado al portapapeles', 'success');
+      showToast('📋 Enlace de conexión copiado', 'success');
     }).catch(() => {
       prompt('Copia este enlace para invitar:', inviteUrl);
     });
