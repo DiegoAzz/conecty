@@ -94,8 +94,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   };
 
-  // Toast Notification
+  // Toast Notification (reemplaza el anterior para evitar acumulación y spam)
   function showToast(message, type = 'info') {
+    toastContainer.innerHTML = ''; // Limpiar mensaje anterior
     const toast = document.createElement('div');
     const borderCol = type === 'success' ? 'border-emerald-500/40 text-emerald-300' : 'border-indigo-500/40 text-indigo-200';
     toast.className = `px-4 py-2.5 rounded-xl glass-panel border ${borderCol} text-xs shadow-xl flex items-center space-x-2 transition-all duration-300 transform translate-y-2 opacity-0 pointer-events-auto`;
@@ -108,8 +109,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     setTimeout(() => {
       toast.classList.add('opacity-0', 'translate-y-2');
-      setTimeout(() => toast.remove(), 300);
-    }, 4000);
+      setTimeout(() => toast.remove(), 250);
+    }, 2200);
   }
 
   // Prellenar código de sala desde URL
@@ -155,8 +156,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const newUrl = `${window.location.origin}/?room=${roomId}`;
     window.history.pushState({ path: newUrl }, '', newUrl);
 
-    // Conectar a Socket.io
-    socket = io();
+    // Conectar a Socket.io con WebSockets directo (mínima latencia)
+    socket = io({
+      transports: ['websocket'],
+      upgrade: false
+    });
 
     // Controlador de puntero láser
     laser = new LaserController(laserCanvas, screenVideo, (pointerData) => {
@@ -339,8 +343,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const user = participants.get(peerId);
     sharerNameText.textContent = `Pantalla de: ${user ? user.name : 'Compañero'}`;
 
-    // Silenciar el elemento de video para evitar restricciones de reproducción automática en navegadores
+    // Silenciar y configurar para mínima latencia en reproducción
     screenVideo.muted = true;
+    if ('latencyHint' in screenVideo) {
+      screenVideo.latencyHint = 0;
+    }
     screenVideo.srcObject = stream;
     screenVideo.play().catch((e) => console.warn('Error al reproducir video:', e));
 
@@ -457,18 +464,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   btnToggleScreen.addEventListener('click', toggleScreenShare);
   btnStartShareIdle.addEventListener('click', toggleScreenShare);
 
-  // Silenciar / Activar Micrófono
+  // Silenciar / Activar Micrófono (sin toasts redundantes)
   btnToggleMic.addEventListener('click', () => {
     if (!webrtc) return;
     const isUnmuted = webrtc.toggleMicrophone();
     if (isUnmuted) {
       micIcon.className = 'w-4 h-4 text-emerald-400';
       micText.textContent = 'Micrófono';
-      showToast('🎙️ Micrófono activado', 'success');
     } else {
       micIcon.className = 'w-4 h-4 text-rose-400';
       micText.textContent = 'Silenciado';
-      showToast('🔇 Micrófono silenciado', 'info');
     }
     renderParticipants();
   });
@@ -487,11 +492,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (laser.isActive) {
       btnToggleLaser.classList.add('border-indigo-500/80', 'bg-indigo-950/40');
       pointerModeIndicator.classList.remove('hidden');
-      showToast('Puntero láser activado', 'info');
     } else {
       btnToggleLaser.classList.remove('border-indigo-500/80', 'bg-indigo-950/40');
       pointerModeIndicator.classList.add('hidden');
-      showToast('Puntero láser desactivado', 'info');
     }
   });
 

@@ -13,7 +13,9 @@ const io = new Server(server, {
     origin: '*',
     methods: ['GET', 'POST']
   },
-  maxHttpBufferSize: 1e7 // 10MB para buffers pequeños si se requiere
+  transports: ['websocket'], // Ultra baja latencia sin HTTP polling
+  perMessageDeflate: false,
+  maxHttpBufferSize: 1e7
 });
 
 const PORT = process.env.PORT || 3000;

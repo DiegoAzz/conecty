@@ -33,7 +33,10 @@ class WebRTCManager {
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: true
+          autoGainControl: true,
+          latency: 0,
+          channelCount: 1,
+          sampleRate: 48000
         },
         video: false
       });
@@ -168,12 +171,17 @@ class WebRTCManager {
       this.localScreenStream = await navigator.mediaDevices.getDisplayMedia({
         video: {
           cursor: 'always',
-          frameRate: { ideal: 30, max: 60 }
+          displaySurface: 'monitor',
+          frameRate: { ideal: 60, max: 60 }
         },
         audio: true
       });
 
       const videoTrack = this.localScreenStream.getVideoTracks()[0];
+      if (videoTrack && 'contentHint' in videoTrack) {
+        videoTrack.contentHint = 'motion'; // Prioriza baja latencia y fluidez
+      }
+
       videoTrack.onended = () => {
         this.stopScreenShare();
         if (onEnded) onEnded();

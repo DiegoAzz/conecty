@@ -102,23 +102,30 @@ class LaserController {
   bindEvents() {
     window.addEventListener('resize', () => this.resizeCanvas());
 
+    let moveRafPending = false;
     this.canvas.addEventListener('mousemove', (e) => {
       if (!this.isActive) return;
-      this.resizeCanvas();
-      const coords = this.normalizeCoords(e.clientX, e.clientY);
-      if (coords.inside) {
-        if (this.isDrawing && this.lastPosition) {
-          this.addDrawingPoint(coords.x, coords.y, this.myColor);
-          if (this.onEmitPointer) {
-            this.onEmitPointer({ type: 'draw', x: coords.x, y: coords.y, color: this.myColor });
+      if (moveRafPending) return;
+      moveRafPending = true;
+
+      requestAnimationFrame(() => {
+        moveRafPending = false;
+        this.resizeCanvas();
+        const coords = this.normalizeCoords(e.clientX, e.clientY);
+        if (coords.inside) {
+          if (this.isDrawing && this.lastPosition) {
+            this.addDrawingPoint(coords.x, coords.y, this.myColor);
+            if (this.onEmitPointer) {
+              this.onEmitPointer({ type: 'draw', x: coords.x, y: coords.y, color: this.myColor });
+            }
+          } else {
+            if (this.onEmitPointer) {
+              this.onEmitPointer({ type: 'move', x: coords.x, y: coords.y, color: this.myColor });
+            }
           }
-        } else {
-          if (this.onEmitPointer) {
-            this.onEmitPointer({ type: 'move', x: coords.x, y: coords.y, color: this.myColor });
-          }
+          this.lastPosition = coords;
         }
-        this.lastPosition = coords;
-      }
+      });
     });
 
     this.canvas.addEventListener('mousedown', (e) => {
