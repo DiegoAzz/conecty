@@ -1,0 +1,26 @@
+{
+  "name": "conecty",
+  "version": "1.0.0",
+  "description": "Conecty - Aplicación web de asistencia remota, llamadas e interacción en vivo sin descargas.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5",
+    "dotenv": "^16.4.5",
+    "cors": "^2.8.5"
+  },
+  "keywords": [
+    "remote-desktop",
+    "webrtc",
+    "screen-sharing",
+    "voice-call",
+    "laser-pointer",
+    "coolify"
+  ],
+  "author": "DiegoAzz",
+  "license": "MIT"
+}

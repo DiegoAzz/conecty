@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  conecty:
+    build: .
+    container_name: conecty
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+      # Servidor TURN opcional (descomentar si tienes Coturn desplegado)
+      # - TURN_URL=turn:tu-vps-ip:3478
+      # - TURN_USERNAME=tu_usuario
+      # - TURN_CREDENTIAL=tu_password

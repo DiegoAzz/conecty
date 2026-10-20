@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full bg-slate-950 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Conecty - Asistencia Remota y Llamadas en Vivo</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: rgba(0,0,0,0.2);
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.15);
+      border-radius: 9999px;
+    }
+    /* Animación de pulso láser */
+    @keyframes ping-slow {
+      0% { transform: scale(0.5); opacity: 1; }
+      100% { transform: scale(2.5); opacity: 0; }
+    }
+    .laser-ping {
+      animation: ping-slow 1s cubic-bezier(0, 0, 0.2, 1) infinite;
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col overflow-hidden select-none">
+
+  <!-- ================= VISTA DE LOBBY / INGRESO ================= -->
+  <div id="lobbyView" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
+    <div class="glass-panel w-full max-w-md p-8 rounded-3xl shadow-2xl border border-indigo-500/20 text-center relative overflow-hidden">
+      <!-- Glow superior -->
+      <div class="absolute -top-24 left-1/2 -translate-x-1/2 w-64 h-64 bg-indigo-600/30 rounded-full blur-3xl pointer-events-none"></div>
+
+      <!-- Logo & Título -->
+      <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600/20 text-indigo-400 mb-4 border border-indigo-500/30">
+        <i data-lucide="radio" class="w-8 h-8"></i>
+      </div>
+      <h1 class="text-3xl font-extrabold tracking-tight text-white mb-2">Conecty</h1>
+      <p class="text-sm text-slate-400 mb-6">Asistencia remota interactiva, voz y pantalla compartida en tiempo real desde tu navegador.</p>
+
+      <form id="joinForm" class="space-y-4 text-left">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">Tu Nombre o Alias</label>
+          <div class="relative">
+            <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
+              <i data-lucide="user" class="w-4 h-4"></i>
+            </span>
+            <input type="text" id="userNameInput" required placeholder="Ej. Diego (Soporte)" class="w-full pl-10 pr-4 py-3 bg-slate-900/80 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">Código de Sala o Enlace</label>
+          <div class="relative">
+            <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
+              <i data-lucide="hash" class="w-4 h-4"></i>
+            </span>
+            <input type="text" id="roomCodeInput" placeholder="Ej. soporte-tecnico (o déjalo vacío para crear una)" class="w-full pl-10 pr-4 py-3 bg-slate-900/80 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition font-mono">
+          </div>
+        </div>
+
+        <button type="submit" id="btnJoin" class="w-full py-3.5 px-4 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-600 text-white font-semibold rounded-xl shadow-lg shadow-indigo-600/30 transition flex items-center justify-center space-x-2">
+          <span>Entrar a la Sala</span>
+          <i data-lucide="arrow-right" class="w-4 h-4"></i>
+        </button>
+      </form>
+
+      <div class="mt-6 pt-6 border-t border-slate-800 text-xs text-slate-500 flex items-center justify-center space-x-4">
+        <span class="flex items-center"><i data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-400 mr-1"></i> Cifrado DTLS P2P</span>
+        <span class="flex items-center"><i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400 mr-1"></i> Sin Descargas</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= INTERFAZ PRINCIPAL DE LA SALA ================= -->
+  <div id="roomView" class="h-full flex flex-col hidden relative">
+    
+    <!-- BARRA SUPERIOR (HEADER) -->
+    <header class="h-16 px-4 md:px-6 glass-panel flex items-center justify-between z-20 border-b border-slate-800/80">
+      <div class="flex items-center space-x-3">
+        <div class="w-9 h-9 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+          <i data-lucide="radio" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <span class="font-bold text-white text-base">Conecty</span>
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5 animate-pulse"></span>
+              En Vivo
+            </span>
+          </div>
+          <div class="text-xs text-slate-400 flex items-center space-x-2">
+            <span>Sala: <strong id="headerRoomId" class="text-slate-200 font-mono">---</strong></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center space-x-2 md:space-x-3">
+        <!-- Botón Copiar Enlace -->
+        <button id="btnCopyInvite" class="px-3.5 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 flex items-center space-x-1.5 transition shadow-sm" title="Copiar enlace de invitación">
+          <i data-lucide="link" class="w-3.5 h-3.5"></i>
+          <span class="hidden sm:inline">Invitar con Enlace</span>
+        </button>
+
+        <!-- Contador de Participantes -->
+        <div class="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-300 flex items-center space-x-2">
+          <i data-lucide="users" class="w-3.5 h-3.5 text-indigo-400"></i>
+          <span id="participantsCount">1 participante</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- ÁREA DE CONTENIDO (VISOR DE PANTALLA & PARTICIPANTES) -->
+    <main class="flex-1 flex overflow-hidden relative bg-slate-950">
+      
+      <!-- Contenedor del Visor Central -->
+      <div id="stageContainer" class="flex-1 relative flex items-center justify-center p-2 md:p-4 overflow-hidden">
+        
+        <!-- Pantalla de Bienvenida / Espera (cuando nadie comparte) -->
+        <div id="idleScreen" class="text-center p-8 max-w-lg glass-panel rounded-3xl border border-slate-800">
+          <div class="w-20 h-20 mx-auto rounded-3xl bg-indigo-950/60 border border-indigo-500/20 flex items-center justify-center text-indigo-400 mb-5 shadow-inner">
+            <i data-lucide="monitor" class="w-10 h-10"></i>
+          </div>
+          <h2 class="text-xl font-bold text-white mb-2">Listo para compartir o recibir asistencia</h2>
+          <p class="text-sm text-slate-400 mb-6 leading-relaxed">
+            Presiona <strong class="text-indigo-400 font-semibold">"Compartir Pantalla"</strong> abajo para que la otra persona vea tu escritorio y pueda guiarte con el puntero láser interactivo, o espera a que tu compañero comparta la suya.
+          </p>
+          <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <button id="btnStartShareIdle" class="w-full sm:w-auto px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-xl shadow-lg shadow-indigo-600/25 flex items-center justify-center space-x-2 transition">
+              <i data-lucide="screen-share" class="w-4 h-4"></i>
+              <span>Compartir mi Pantalla</span>
+            </button>
+            <button id="btnQuickCopy" class="w-full sm:w-auto px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-semibold rounded-xl border border-slate-700 flex items-center justify-center space-x-2 transition">
+              <i data-lucide="copy" class="w-4 h-4"></i>
+              <span>Copiar Enlace de Sala</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Video de Pantalla Compartida Activa -->
+        <div id="videoWrapper" class="relative w-full h-full max-w-full max-h-full flex items-center justify-center hidden">
+          <video id="screenVideo" autoplay playsinline class="max-w-full max-h-full rounded-2xl shadow-2xl object-contain bg-black border border-slate-800"></video>
+          
+          <!-- Lienzo del Puntero Láser y Anotaciones Interactivas -->
+          <canvas id="laserCanvas" class="absolute inset-0 w-full h-full pointer-events-auto cursor-crosshair z-10"></canvas>
+
+          <!-- Banner Informativo Sobre el Video -->
+          <div id="sharerBanner" class="absolute top-4 left-4 z-20 px-3.5 py-1.5 rounded-xl glass-panel text-xs text-white flex items-center space-x-2 border border-slate-700/80 shadow-lg">
+            <i data-lucide="monitor" class="w-3.5 h-3.5 text-indigo-400"></i>
+            <span id="sharerNameText">Pantalla de: Usuario</span>
+          </div>
+
+          <!-- Indicador de Modo Puntero Activo -->
+          <div id="pointerModeIndicator" class="absolute top-4 right-4 z-20 px-3 py-1.5 rounded-xl bg-indigo-600/80 backdrop-blur-md text-xs text-white font-medium flex items-center space-x-2 shadow-lg">
+            <span class="w-2 h-2 rounded-full bg-red-400 laser-ping"></span>
+            <span>Puntero Láser Activo</span>
+          </div>
+        </div>
+
+        <!-- Miniaturas / Grid de Audio y Avatares de Participantes -->
+        <div id="participantsBar" class="absolute bottom-4 left-4 z-20 flex items-center space-x-2 overflow-x-auto max-w-[calc(100%-2rem)]">
+          <!-- Tarjetas dinámicas de participantes -->
+        </div>
+
+      </div>
+
+      <!-- PANEL LATERAL DE CHAT (COLAPSIBLE) -->
+      <aside id="chatSidebar" class="w-80 md:w-96 glass-panel border-l border-slate-800 flex flex-col z-20 transition-all duration-300 transform translate-x-full absolute right-0 inset-y-0 shadow-2xl">
+        <div class="h-16 px-5 border-b border-slate-800 flex items-center justify-between">
+          <div class="flex items-center space-x-2">
+            <i data-lucide="message-square" class="w-4 h-4 text-indigo-400"></i>
+            <h3 class="font-bold text-sm text-white">Chat de la Sala</h3>
+          </div>
+          <button id="btnCloseChat" class="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <!-- Lista de Mensajes -->
+        <div id="chatMessages" class="flex-1 p-4 overflow-y-auto space-y-3 custom-scrollbar text-sm">
+          <!-- Mensaje de bienvenida -->
+          <div class="p-3 rounded-xl bg-indigo-950/40 border border-indigo-800/30 text-xs text-indigo-200">
+            👋 ¡Bienvenidos a Conecty! Puedes enviar mensajes, enlaces o notas técnicas aquí mientras compartes pantalla.
+          </div>
+        </div>
+
+        <!-- Input de Envío -->
+        <form id="chatForm" class="p-3 border-t border-slate-800 flex items-center space-x-2">
+          <input type="text" id="chatInput" placeholder="Escribe un mensaje..." class="flex-1 px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+          <button type="submit" class="p-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition shadow">
+            <i data-lucide="send" class="w-4 h-4"></i>
+          </button>
+        </form>
+      </aside>
+
+    </main>
+
+    <!-- BARRA INFERIOR DE CONTROLES (DOCK) -->
+    <footer class="h-20 glass-panel border-t border-slate-800/80 px-4 md:px-8 flex items-center justify-between z-30">
+      
+      <!-- Controles de Audio y Micrófono -->
+      <div class="flex items-center space-x-2">
+        <button id="btnToggleMic" class="h-12 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs flex items-center space-x-2 border border-slate-700 transition" title="Activar/Silenciar Micrófono (Atajo: M)">
+          <i data-lucide="mic" id="micIcon" class="w-4 h-4 text-emerald-400"></i>
+          <span id="micText" class="hidden sm:inline">Micrófono</span>
+        </button>
+      </div>
+
+      <!-- Controles Centrales (Pantalla, Láser, Interacción) -->
+      <div class="flex items-center space-x-2 md:space-x-3">
+        
+        <!-- Botón Compartir Pantalla -->
+        <button id="btnToggleScreen" class="h-12 px-5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center space-x-2 shadow-lg shadow-indigo-600/30 transition">
+          <i data-lucide="screen-share" id="screenIcon" class="w-4 h-4"></i>
+          <span id="screenText">Compartir Pantalla</span>
+        </button>
+
+        <!-- Botón Modo Puntero Láser / Guía Visual -->
+        <button id="btnToggleLaser" class="h-12 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs flex items-center space-x-2 border border-slate-700 transition" title="Puntero láser interactivo">
+          <i data-lucide="mouse-pointer" id="laserIcon" class="w-4 h-4 text-rose-400"></i>
+          <span class="hidden md:inline">Puntero Guía</span>
+        </button>
+
+        <!-- Botón Limpiar Anotaciones -->
+        <button id="btnClearCanvas" class="h-12 w-12 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center border border-slate-700 transition" title="Limpiar marcas y trazos">
+          <i data-lucide="eraser" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Controles Secundarios (Chat, Salir) -->
+      <div class="flex items-center space-x-2">
+        <!-- Toggle Chat -->
+        <button id="btnToggleChat" class="h-12 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs flex items-center space-x-2 border border-slate-700 transition relative">
+          <i data-lucide="message-square" class="w-4 h-4"></i>
+          <span class="hidden sm:inline">Chat</span>
+          <span id="chatBadge" class="hidden absolute -top-1 -right-1 w-4 h-4 bg-indigo-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center">0</span>
+        </button>
+
+        <!-- Salir de la Sala -->
+        <button id="btnLeaveRoom" class="h-12 px-4 rounded-2xl bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white font-medium text-xs flex items-center space-x-2 border border-rose-500/30 transition">
+          <i data-lucide="phone-off" class="w-4 h-4"></i>
+          <span class="hidden sm:inline">Salir</span>
+        </button>
+      </div>
+
+    </footer>
+
+  </div>
+
+  <!-- Toast de Notificaciones -->
+  <div id="toastContainer" class="fixed top-20 right-6 z-50 flex flex-col space-y-2 pointer-events-none"></div>
+
+  <!-- Reproductor de Audio Oculto para Streams Remotos -->
+  <div id="remoteAudios" class="hidden"></div>
+
+  <!-- Scripts -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/laser.js"></script>
+  <script src="/js/webrtc.js"></script>
+  <script src="/js/app.js"></script>
+  <script>
+    // Inicializar iconos de Lucide
+    document.addEventListener("DOMContentLoaded", () => {
+      lucide.createIcons();
+    });
+  </script>
+</body>
+</html>
