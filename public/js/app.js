@@ -2197,7 +2197,19 @@ document.addEventListener('DOMContentLoaded', async () => {
       screenVideo.latencyHint = 0;
     }
     screenVideo.srcObject = screenData.stream;
-    screenVideo.play().catch((e) => console.warn('Error al reproducir video:', e));
+    
+    const playVideo = () => {
+      screenVideo.play().catch((e) => console.warn('Error al reproducir video:', e));
+    };
+    playVideo();
+    screenVideo.onloadedmetadata = playVideo;
+    screenVideo.oncanplay = playVideo;
+
+    if (screenData.stream && screenData.stream.getVideoTracks) {
+      screenData.stream.getVideoTracks().forEach((track) => {
+        track.onunmute = playVideo;
+      });
+    }
 
     if (id === 'local') {
       sharerNameText.innerHTML = `
@@ -2206,7 +2218,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       `;
       if (btnToggleMirrorShield) btnToggleMirrorShield.classList.remove('hidden');
     } else {
-      sharerNameText.textContent = 'Pantalla de: ' + screenData.userName;
+      sharerNameText.innerHTML = `
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse inline-block mr-1"></span>
+        <span>Pantalla de: ${escapeHtml(screenData.userName)}</span>
+      `;
       if (btnToggleMirrorShield) btnToggleMirrorShield.classList.add('hidden');
     }
 
