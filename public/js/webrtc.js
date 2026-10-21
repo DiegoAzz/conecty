@@ -170,18 +170,17 @@ class WebRTCManager {
   /**
    * Inicia la captura de pantalla y re-negocia con todos los participantes
    */
-  async startScreenShare(onEnded) {
+  async startScreenShare(onEnded, fps = 60) {
     try {
+      const targetFps = parseInt(fps, 10) || 60;
       let stream = null;
       try {
         stream = await navigator.mediaDevices.getDisplayMedia({
           video: {
             cursor: 'always',
-            displaySurface: 'monitor',
-            logicalSurface: true,
             width: { ideal: 3840, max: 3840 },
             height: { ideal: 2160, max: 2160 },
-            frameRate: { ideal: 60, max: 60 }
+            frameRate: { ideal: targetFps, max: targetFps }
           },
           audio: true
         });
@@ -192,7 +191,7 @@ class WebRTCManager {
             cursor: 'always',
             width: { ideal: 1920, max: 3840 },
             height: { ideal: 1080, max: 2160 },
-            frameRate: { ideal: 60, max: 60 }
+            frameRate: { ideal: targetFps, max: targetFps }
           },
           audio: false
         });
@@ -213,7 +212,11 @@ class WebRTCManager {
 
       // Agregar los tracks de pantalla a todas las conexiones peer existentes
       for (const peerId of this.peers.keys()) {
-        await this.shareScreenWithPeer(peerId);
+        try {
+          await this.shareScreenWithPeer(peerId);
+        } catch (e) {
+          console.warn(`Error al compartir pantalla con peer ${peerId}:`, e);
+        }
       }
 
       return this.localScreenStream;
@@ -244,23 +247,31 @@ class WebRTCManager {
       }
     });
 
+    this.preferHighQualityCodecs(pc);
+
     const triggerRenegotiate = async () => {
-      if (pc.signalingState === 'stable') {
-        await this.renegotiate(peerId);
-        // Optimizar parámetros de codificación de video para ultra nitidez
+      const applySenderParams = () => {
         peerObj.screenSenders.forEach((sender) => {
           if (sender.track && sender.track.kind === 'video' && sender.setParameters) {
             try {
               const params = sender.getParameters();
               if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
               params.encodings[0].maxBitrate = 25000000; // 25 Mbps para resolución nativa nítida
+              params.encodings[0].minBitrate = 5000000;  // 5 Mbps mínimo para nitidez instantánea
               params.encodings[0].priority = 'high';
               params.encodings[0].networkPriority = 'high';
-              params.degradationPreference = 'maintain-resolution'; // NUNCA degradar resolución
+              params.encodings[0].scaleResolutionDownBy = 1.0; // Prohibir reducción de resolución
+              params.degradationPreference = 'maintain-resolution'; // NUNCA degradar resolución por ancho de banda
               sender.setParameters(params).catch(() => {});
             } catch (e) {}
           }
         });
+      };
+
+      applySenderParams();
+      if (pc.signalingState === 'stable') {
+        await this.renegotiate(peerId);
+        applySenderParams();
       }
     };
 
@@ -305,12 +316,85 @@ class WebRTCManager {
   }
 
   /**
+   * Prioriza codecs de alta fidelidad para texto y pantalla (VP9, H264)
+   */
+  preferHighQualityCodecs(pc) {
+    if (!('RTCRtpReceiver' in window) || !RTCRtpReceiver.getCapabilities) return;
+    try {
+      const caps = RTCRtpReceiver.getCapabilities('video');
+      if (!caps || !caps.codecs) return;
+
+      const preferredOrder = ['video/VP9', 'video/H264', 'video/VP8', 'video/AV1'];
+      const sortedCodecs = [...caps.codecs].sort((a, b) => {
+        const idxA = preferredOrder.indexOf(a.mimeType);
+        const idxB = preferredOrder.indexOf(b.mimeType);
+        const orderA = idxA === -1 ? 99 : idxA;
+        const orderB = idxB === -1 ? 99 : idxB;
+        return orderA - orderB;
+      });
+
+      pc.getTransceivers().forEach((transceiver) => {
+        if (transceiver.receiver && transceiver.receiver.track && transceiver.receiver.track.kind === 'video') {
+          if (transceiver.setCodecPreferences) {
+            transceiver.setCodecPreferences(sortedCodecs);
+          }
+        }
+      });
+    } catch (e) {
+      console.warn('setCodecPreferences:', e);
+    }
+  }
+
+  /**
    * Modifica el SDP para forzar bitrate de 25 Mbps en video (alta resolución nítida sin compresión borrosa)
+   * Cumple con RFC 4566: b= debe ubicarse después de c= en la sección de medios
    */
   boostVideoBitrateInSdp(sdp) {
     if (!sdp || !sdp.includes('m=video')) return sdp;
-    let clean = sdp.replace(/b=(AS|TIAS):[^\r\n]*\r\n/g, '');
-    return clean.replace(/(m=video[^\r\n]*\r\n)/g, '$1b=AS:25000\r\nb=TIAS:25000000\r\n');
+    try {
+      const lines = sdp.split('\r\n');
+      let inVideo = false;
+      let cSeen = false;
+      const newLines = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        let line = lines[i];
+        if (line.startsWith('m=video')) {
+          inVideo = true;
+          cSeen = false;
+          newLines.push(line);
+          continue;
+        }
+        if (line.startsWith('m=') && !line.startsWith('m=video')) {
+          inVideo = false;
+          cSeen = false;
+          newLines.push(line);
+          continue;
+        }
+        if (inVideo && line.startsWith('c=IN ') && !cSeen) {
+          cSeen = true;
+          newLines.push(line);
+          newLines.push('b=AS:25000');
+          newLines.push('b=TIAS:25000000');
+          continue;
+        }
+        if (inVideo && (line.startsWith('b=AS:') || line.startsWith('b=TIAS:'))) {
+          continue;
+        }
+        if (inVideo && line.startsWith('a=fmtp:')) {
+          if (!line.includes('x-google-min-bitrate')) {
+            line += ';x-google-min-bitrate=5000;x-google-start-bitrate=15000;x-google-max-bitrate=25000';
+          }
+          newLines.push(line);
+          continue;
+        }
+        newLines.push(line);
+      }
+      return newLines.join('\r\n');
+    } catch (e) {
+      console.warn('Error optimizando SDP:', e);
+      return sdp;
+    }
   }
 
   /**
@@ -326,8 +410,14 @@ class WebRTCManager {
     try {
       peerObj.makingOffer = true;
       const offer = await peerObj.pc.createOffer();
-      const sdp = this.boostVideoBitrateInSdp(offer.sdp);
-      await peerObj.pc.setLocalDescription(new RTCSessionDescription({ type: offer.type, sdp }));
+      let sdp = offer.sdp;
+      try {
+        sdp = this.boostVideoBitrateInSdp(offer.sdp);
+        await peerObj.pc.setLocalDescription(new RTCSessionDescription({ type: offer.type, sdp }));
+      } catch (sdpErr) {
+        console.warn('Fallback a SDP original en oferta:', sdpErr);
+        await peerObj.pc.setLocalDescription(offer);
+      }
       this.socket.emit('offer', {
         targetId: peerId,
         offer: peerObj.pc.localDescription
@@ -344,6 +434,7 @@ class WebRTCManager {
    */
   async createOffer(targetId) {
     const peerObj = this.getOrCreatePeer(targetId, true);
+    this.preferHighQualityCodecs(peerObj.pc);
     await this.renegotiate(targetId);
   }
 
@@ -353,6 +444,7 @@ class WebRTCManager {
   async handleOffer(callerId, offer) {
     const peerObj = this.getOrCreatePeer(callerId, false);
     const pc = peerObj.pc;
+    this.preferHighQualityCodecs(pc);
 
     const offerCollision = (peerObj.makingOffer || pc.signalingState !== 'stable');
     peerObj.ignoreOffer = !peerObj.isPolite && offerCollision;
@@ -382,8 +474,14 @@ class WebRTCManager {
       }
 
       const answer = await pc.createAnswer();
-      const sdp = this.boostVideoBitrateInSdp(answer.sdp);
-      await pc.setLocalDescription(new RTCSessionDescription({ type: answer.type, sdp }));
+      let sdp = answer.sdp;
+      try {
+        sdp = this.boostVideoBitrateInSdp(answer.sdp);
+        await pc.setLocalDescription(new RTCSessionDescription({ type: answer.type, sdp }));
+      } catch (sdpErr) {
+        console.warn('Fallback a SDP original en respuesta:', sdpErr);
+        await pc.setLocalDescription(answer);
+      }
 
       this.socket.emit('answer', {
         targetId: callerId,
