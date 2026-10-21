@@ -177,8 +177,10 @@ class WebRTCManager {
         stream = await navigator.mediaDevices.getDisplayMedia({
           video: {
             cursor: 'always',
-            width: { ideal: 1920, max: 3840 },
-            height: { ideal: 1080, max: 2160 },
+            displaySurface: 'monitor',
+            logicalSurface: true,
+            width: { ideal: 3840, max: 3840 },
+            height: { ideal: 2160, max: 2160 },
             frameRate: { ideal: 60, max: 60 }
           },
           audio: true
@@ -186,7 +188,12 @@ class WebRTCManager {
       } catch (errFallback) {
         console.warn('Fallback a captura básica de pantalla:', errFallback);
         stream = await navigator.mediaDevices.getDisplayMedia({
-          video: true,
+          video: {
+            cursor: 'always',
+            width: { ideal: 1920, max: 3840 },
+            height: { ideal: 1080, max: 2160 },
+            frameRate: { ideal: 60, max: 60 }
+          },
           audio: false
         });
       }
@@ -195,7 +202,8 @@ class WebRTCManager {
 
       const videoTrack = this.localScreenStream.getVideoTracks()[0];
       if (videoTrack && 'contentHint' in videoTrack) {
-        videoTrack.contentHint = 'motion'; // Prioriza fluidez y nitidez
+        // 'detail' prioriza nitidez cristalina de textos, documentos y código sobre compresión agresiva
+        videoTrack.contentHint = 'detail';
       }
 
       videoTrack.onended = () => {
@@ -239,15 +247,16 @@ class WebRTCManager {
     const triggerRenegotiate = async () => {
       if (pc.signalingState === 'stable') {
         await this.renegotiate(peerId);
-        // Optimizar parámetros de codificación de video
+        // Optimizar parámetros de codificación de video para ultra nitidez
         peerObj.screenSenders.forEach((sender) => {
           if (sender.track && sender.track.kind === 'video' && sender.setParameters) {
             try {
               const params = sender.getParameters();
               if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
-              params.encodings[0].maxBitrate = 8000000;
+              params.encodings[0].maxBitrate = 25000000; // 25 Mbps para resolución nativa nítida
               params.encodings[0].priority = 'high';
               params.encodings[0].networkPriority = 'high';
+              params.degradationPreference = 'maintain-resolution'; // NUNCA degradar resolución
               sender.setParameters(params).catch(() => {});
             } catch (e) {}
           }
@@ -308,7 +317,11 @@ class WebRTCManager {
     try {
       peerObj.makingOffer = true;
       const offer = await peerObj.pc.createOffer();
-      await peerObj.pc.setLocalDescription(offer);
+      let sdp = offer.sdp;
+      if (sdp && sdp.includes('m=video')) {
+        sdp = sdp.replace(/a=mid:video\r\n/g, 'a=mid:video\r\nb=AS:25000\r\nb=TIAS:25000000\r\n');
+      }
+      await peerObj.pc.setLocalDescription(new RTCSessionDescription({ type: offer.type, sdp }));
       this.socket.emit('offer', {
         targetId: peerId,
         offer: peerObj.pc.localDescription
@@ -363,7 +376,11 @@ class WebRTCManager {
       }
 
       const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
+      let sdp = answer.sdp;
+      if (sdp && sdp.includes('m=video')) {
+        sdp = sdp.replace(/a=mid:video\r\n/g, 'a=mid:video\r\nb=AS:25000\r\nb=TIAS:25000000\r\n');
+      }
+      await pc.setLocalDescription(new RTCSessionDescription({ type: answer.type, sdp }));
 
       this.socket.emit('answer', {
         targetId: callerId,

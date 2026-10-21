@@ -146,9 +146,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   const multiScreenTabs = document.getElementById('multiScreenTabs');
   const btnToggleMirrorShield = document.getElementById('btnToggleMirrorShield');
   const btnShowLiveStage = document.getElementById('btnShowLiveStage');
+  const btnVideoControlAction = document.getElementById('btnVideoControlAction');
+  const btnVideoControlText = document.getElementById('btnVideoControlText');
+  const btnVideoControlIcon = document.getElementById('btnVideoControlIcon');
 
   // Panel Lateral de Participantes & Moderación
   const btnToggleParticipants = document.getElementById('btnToggleParticipants');
+  const btnToggleParticipantsDock = document.getElementById('btnToggleParticipantsDock');
   const btnCloseParticipants = document.getElementById('btnCloseParticipants');
   const participantsSidebar = document.getElementById('participantsSidebar');
   const participantsListDrawer = document.getElementById('participantsListDrawer');
@@ -1311,6 +1315,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
       renderParticipantsDrawer();
+      updateVideoControlButton();
     });
 
     socket.on('force-mute', () => {
@@ -1332,6 +1337,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       isHost = (newHostId === socket.id);
       showToast('👑 ' + (isHost ? 'Ahora eres el anfitrión de la sala' : newHostName + ' es el nuevo anfitrión'), 'info');
       renderParticipantsDrawer();
+      updateVideoControlButton();
     });
 
     socket.on('user-hand-updated', ({ userId, userName, isHandRaised, loweredByHost }) => {
@@ -1473,7 +1479,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       btnFillScreen.className = 'px-2.5 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-500 transition flex items-center space-x-1';
       btnOriginalScreen.className = 'px-2 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition';
     } else if (currentFitMode === 'original') {
-      screenVideo.className = 'rounded-2xl shadow-2xl bg-black border border-slate-800 transition-all';
+      screenVideo.className = 'rounded-2xl shadow-2xl object-none bg-black border border-slate-800 transition-all';
       btnFitScreen.className = 'px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition flex items-center space-x-1';
       btnFillScreen.className = 'px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition flex items-center space-x-1';
       btnOriginalScreen.className = 'px-2 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-500 transition';
@@ -2057,6 +2063,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     renderMultiScreenTabs();
+    updateVideoControlButton();
     if (window.lucide) lucide.createIcons();
   }
 
@@ -2138,18 +2145,85 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   if (btnToggleParticipants) btnToggleParticipants.addEventListener('click', toggleParticipantsSidebar);
+  if (btnToggleParticipantsDock) btnToggleParticipantsDock.addEventListener('click', toggleParticipantsSidebar);
   if (btnCloseParticipants) btnCloseParticipants.addEventListener('click', toggleParticipantsSidebar);
+
+  function updateVideoControlButton() {
+    if (!btnVideoControlAction || !btnVideoControlText) return;
+
+    if (isHost) {
+      if (authorizedControllerId) {
+        const controllerUser = participants.get(authorizedControllerId);
+        const name = controllerUser ? controllerUser.name : 'Usuario';
+        btnVideoControlAction.className = 'px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-md shadow-rose-600/30 flex items-center space-x-1.5 transition ml-1 animate-pulse';
+        btnVideoControlText.textContent = `🚫 Quitar Control (${name})`;
+        if (btnVideoControlIcon) btnVideoControlIcon.setAttribute('data-lucide', 'x-circle');
+      } else {
+        btnVideoControlAction.className = 'px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-600/30 flex items-center space-x-1.5 transition ml-1';
+        btnVideoControlText.textContent = '🎮 Ceder Control';
+        if (btnVideoControlIcon) btnVideoControlIcon.setAttribute('data-lucide', 'gamepad-2');
+      }
+    } else {
+      if (authorizedControllerId === socket.id) {
+        btnVideoControlAction.className = 'px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-600/30 flex items-center space-x-1.5 transition ml-1';
+        btnVideoControlText.textContent = isRemoteControlActive ? '🎮 Ratón Activo' : '🎮 Activar Ratón';
+        if (btnVideoControlIcon) btnVideoControlIcon.setAttribute('data-lucide', 'gamepad-2');
+      } else {
+        btnVideoControlAction.className = 'px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 flex items-center space-x-1.5 transition ml-1';
+        btnVideoControlText.textContent = '🎮 Pedir Control';
+        if (btnVideoControlIcon) btnVideoControlIcon.setAttribute('data-lucide', 'gamepad-2');
+      }
+    }
+    if (window.lucide) lucide.createIcons();
+  }
+
+  if (btnVideoControlAction) {
+    btnVideoControlAction.addEventListener('click', () => {
+      if (isHost) {
+        if (authorizedControllerId) {
+          revokeAllMouseControl();
+          showToast('🚫 Control de ratón revocado a todos', 'info');
+        } else {
+          // Si hay 1 participante en la sala, cederle a él directamente
+          if (participants.size === 1) {
+            const targetUser = participants.values().next().value;
+            grantMouseControlTo(targetUser.id);
+            showToast(`🎮 ¡Le cediste el control del ratón a ${targetUser.name}!`, 'success');
+          } else if (participants.size > 1) {
+            // Abrir la barra de participantes para que elija a quién
+            if (participantsSidebar && participantsSidebar.classList.contains('hidden')) {
+              toggleParticipantsSidebar();
+            }
+            showToast('Selecciona a qué usuario ceder el control en la lista lateral', 'info');
+          } else {
+            showToast('Espera a que otro usuario se una a la sala para cederle el control', 'info');
+          }
+        }
+      } else {
+        // Invitado
+        if (authorizedControllerId === socket.id) {
+          btnToggleControl.click();
+        } else {
+          socket.emit('toggle-raise-hand');
+          showToast('✋ Alzaste la mano para solicitar la palabra y control de ratón', 'info');
+        }
+      }
+      updateVideoControlButton();
+    });
+  }
 
   function grantMouseControlTo(targetUserId) {
     if (socket) {
       socket.emit('grant-mouse-control', { targetUserId });
     }
+    updateVideoControlButton();
   }
 
   function revokeAllMouseControl() {
     if (socket) {
       socket.emit('revoke-mouse-control');
     }
+    updateVideoControlButton();
   }
 
   if (btnRevokeControlAll) btnRevokeControlAll.addEventListener('click', revokeAllMouseControl);
@@ -2313,7 +2387,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       participants.forEach((user, idx) => {
         const item = document.createElement('div');
-        item.className = 'relative rounded-2xl bg-slate-900/90 border border-slate-800 shadow-lg overflow-hidden flex flex-col justify-between aspect-[16/10] p-2.5 transition-all hover:border-slate-700 group shrink-0';
+        item.className = 'relative rounded-2xl bg-slate-900/90 border border-slate-800 shadow-lg overflow-hidden flex flex-col justify-between p-3 transition-all hover:border-slate-700 group shrink-0';
         const hasControl = (authorizedControllerId === user.id);
         const initials = (user.name || 'U').substring(0, 2).toUpperCase();
         const colorClass = avatarColors[Math.abs(user.name.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % avatarColors.length];
@@ -2339,7 +2413,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           </div>
 
           <!-- Avatar / Inicial Grande al Centro -->
-          <div class="my-auto flex flex-col items-center justify-center">
+          <div class="my-2 flex flex-col items-center justify-center">
             <div class="w-12 h-12 rounded-full ${colorClass} border flex items-center justify-center font-bold text-lg shadow-inner">
               ${initials}
             </div>
@@ -2355,32 +2429,29 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
           </div>
 
-          <!-- Capa de Acciones de Moderador (Superpuesta en Hover para el Host) -->
+          <!-- Acciones de Moderador Visibles Directamente para el Host -->
           ${isHost ? `
-            <div class="absolute inset-0 bg-slate-950/90 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-center items-center p-3 space-y-1.5 z-20">
-              <div class="text-[11px] font-bold text-white truncate max-w-full">${escapeHtml(user.name)}</div>
-              
-              <button class="btn-ctrl-user w-full py-1.5 px-2 rounded-xl text-[11px] font-semibold transition flex items-center justify-center space-x-1 shadow-sm ${
+            <div class="mt-2.5 pt-2 border-t border-slate-800/80 flex flex-col space-y-1.5 z-20">
+              <button class="btn-ctrl-user w-full py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5 shadow-md ${
                 hasControl
                   ? 'bg-rose-600 text-white hover:bg-rose-500 animate-pulse'
                   : 'bg-emerald-600 text-white hover:bg-emerald-500'
               }">
-                <i data-lucide="${hasControl ? 'x-circle' : 'gamepad-2'}" class="w-3.5 h-3.5"></i>
-                <span>${hasControl ? '🚫 Quitar Control' : '🎮 Ceder Control'}</span>
+                <i data-lucide="${hasControl ? 'x-circle' : 'gamepad-2'}" class="w-4 h-4"></i>
+                <span>${hasControl ? '🚫 Quitar Control' : '🎮 Ceder Control de Ratón'}</span>
               </button>
 
-              ${user.isHandRaised ? `
-                <button class="btn-lower-hand w-full py-1 px-2 rounded-xl text-[11px] font-semibold bg-amber-600 text-white hover:bg-amber-500 transition flex items-center justify-center space-x-1 shadow">
-                  <span>✋ Bajar Mano</span>
-                </button>
-              ` : ''}
-
               <div class="flex items-center space-x-1 w-full pt-0.5">
-                <button class="btn-mute-user flex-1 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] transition flex items-center justify-center space-x-1">
+                ${user.isHandRaised ? `
+                  <button class="btn-lower-hand flex-1 py-1 px-1.5 rounded-xl text-[10px] font-semibold bg-amber-600 text-white hover:bg-amber-500 transition flex items-center justify-center space-x-1 shadow">
+                    <span>✋ Bajar Mano</span>
+                  </button>
+                ` : ''}
+                <button class="btn-mute-user flex-1 py-1 px-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] transition flex items-center justify-center space-x-1" title="Silenciar">
                   <i data-lucide="mic-off" class="w-3 h-3 text-rose-400"></i>
                   <span>Silenciar</span>
                 </button>
-                <button class="btn-kick-user flex-1 py-1 rounded-xl bg-slate-800 hover:bg-rose-950 text-slate-300 hover:text-rose-400 text-[10px] transition flex items-center justify-center space-x-1">
+                <button class="btn-kick-user flex-1 py-1 px-1.5 rounded-xl bg-slate-800 hover:bg-rose-950 text-slate-300 hover:text-rose-400 text-[10px] transition flex items-center justify-center space-x-1" title="Expulsar">
                   <i data-lucide="user-x" class="w-3 h-3 text-rose-400"></i>
                   <span>Expulsar</span>
                 </button>

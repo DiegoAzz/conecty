@@ -489,6 +489,14 @@
             <button id="btnFullscreen" class="p-1.5 rounded-xl bg-indigo-600/30 hover:bg-indigo-600 text-indigo-300 hover:text-white text-xs transition border border-indigo-500/40" title="Pantalla Completa (F)">
               <i data-lucide="expand" class="w-3.5 h-3.5"></i>
             </button>
+
+            <div class="h-4 w-px bg-slate-700 mx-0.5"></div>
+
+            <!-- Botón Ceder / Control Remoto Visible Directamente en la Pantalla -->
+            <button id="btnVideoControlAction" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-600/30 flex items-center space-x-1.5 transition" title="Ceder o tomar control interactivo de ratón y teclado">
+              <i data-lucide="gamepad-2" id="btnVideoControlIcon" class="w-3.5 h-3.5"></i>
+              <span id="btnVideoControlText">Ceder Control</span>
+            </button>
           </div>
 
           <!-- Indicador de Modo Puntero Activo -->
@@ -528,7 +536,7 @@
             </span>
           </div>
           <p class="text-[10px] text-slate-400 leading-tight mb-2">
-            Pasa el ratón sobre un usuario para <strong class="text-emerald-400 font-semibold">Ceder Control</strong>.
+            Presiona <strong class="text-emerald-400 font-semibold">"Ceder Control"</strong> en la tarjeta de un usuario o arriba en la barra de la pantalla.
           </p>
           <div id="revokeControlContainer" class="hidden">
             <button id="btnRevokeControlAll" class="w-full py-1.5 px-2.5 rounded-xl bg-rose-600/30 hover:bg-rose-600 text-rose-300 hover:text-white text-[11px] font-semibold border border-rose-500/40 flex items-center justify-center space-x-1.5 transition">
@@ -639,8 +647,14 @@
         </button>
       </div>
 
-      <!-- Controles Secundarios (Chat, Salir) -->
+      <!-- Controles Secundarios (Participantes, Chat, Salir) -->
       <div class="flex items-center space-x-2">
+        <!-- Toggle Participantes desde el Dock -->
+        <button id="btnToggleParticipantsDock" class="h-12 px-3.5 md:px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs flex items-center space-x-2 border border-slate-700 transition" title="Ver Participantes y Moderación">
+          <i data-lucide="users" class="w-4 h-4 text-indigo-400"></i>
+          <span class="hidden sm:inline">Participantes</span>
+        </button>
+
         <!-- Toggle Chat -->
         <button id="btnToggleChat" class="h-12 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs flex items-center space-x-2 border border-slate-700 transition relative">
           <i data-lucide="message-square" class="w-4 h-4"></i>
