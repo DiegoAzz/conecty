@@ -1,6 +1,7 @@
 /**
  * Conecty - Aplicación Principal y Control de Estado UI
  * Modelo AnyDesk: ID Fijo de 9 dígitos por dispositivo, Anti-Modo Espejo,
+ * Sistema de Autorización Previa de Conexiones Entrantes,
  * Controles de tamaño de pantalla, y visualización en tiempo real de llamadas de voz.
  */
 
@@ -15,6 +16,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const connectRemoteForm = document.getElementById('connectRemoteForm');
   const targetDeviceIdInput = document.getElementById('targetDeviceIdInput');
+
+  // Modales de Autorización
+  const incomingRequestModal = document.getElementById('incomingRequestModal');
+  const incomingRequesterAvatar = document.getElementById('incomingRequesterAvatar');
+  const incomingRequesterName = document.getElementById('incomingRequesterName');
+  const incomingRequesterDeviceId = document.getElementById('incomingRequesterDeviceId');
+  const btnRejectConnection = document.getElementById('btnRejectConnection');
+  const btnAcceptConnection = document.getElementById('btnAcceptConnection');
+
+  const waitingApprovalModal = document.getElementById('waitingApprovalModal');
+  const waitingTargetIdDisplay = document.getElementById('waitingTargetIdDisplay');
+  const waitingHostNameText = document.getElementById('waitingHostNameText');
+  const btnCancelWaitingApproval = document.getElementById('btnCancelWaitingApproval');
 
   // Elementos DOM de la Sala
   const roomView = document.getElementById('roomView');
@@ -78,7 +92,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ================= 1. GESTIÓN DE ID FIJO DE DISPOSITIVO (ESTILO ANYDESK) =================
   let myDeviceId = localStorage.getItem('conecty_device_id');
   if (!myDeviceId || myDeviceId.length !== 9 || !/^\d+$/.test(myDeviceId)) {
-    // Generar un número único permanente de 9 dígitos para esta máquina
     myDeviceId = Math.floor(100000000 + Math.random() * 900000000).toString();
     localStorage.setItem('conecty_device_id', myDeviceId);
   }
@@ -136,11 +149,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (connectParam) {
     targetDeviceIdInput.value = formatDeviceId(connectParam);
   } else if (roomParam) {
-    targetDeviceIdInput.value = roomParam;
+    const cleanRoomNum = roomParam.replace(/^device-/, '');
+    targetDeviceIdInput.value = formatDeviceId(cleanRoomNum);
   }
 
   // ================= 2. ESTADO LOCAL Y RECURSOS =================
-  let socket = null;
   let webrtc = null;
   let laser = null;
   let myUser = null;
@@ -155,6 +168,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Sintetizador de Sonidos (Web Audio API)
   const soundEffects = {
     ctx: null,
+    ringInterval: null,
     init() {
       if (!this.ctx) {
         this.ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -194,6 +208,24 @@ document.addEventListener('DOMContentLoaded', async () => {
       this.playTone(523.25, 'sine', 0.2);
       setTimeout(() => this.playTone(659.25, 'sine', 0.2), 150);
       setTimeout(() => this.playTone(783.99, 'sine', 0.35), 300);
+    },
+    playIncomingChime() {
+      // Tono de llamada entrante suave y agradable (AnyDesk style)
+      this.playTone(523.25, 'sine', 0.2);
+      setTimeout(() => this.playTone(659.25, 'sine', 0.3), 220);
+    },
+    startIncomingCallRing() {
+      this.stopIncomingCallRing();
+      this.playIncomingChime();
+      this.ringInterval = setInterval(() => {
+        this.playIncomingChime();
+      }, 1900);
+    },
+    stopIncomingCallRing() {
+      if (this.ringInterval) {
+        clearInterval(this.ringInterval);
+        this.ringInterval = null;
+      }
     }
   };
 
@@ -202,7 +234,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     showToast('🔊 Sonido de prueba reproducido. Si lo escuchas, tus altavoces funcionan.', 'info');
   });
 
-  // Toast Notification (elimina el anterior para evitar spam o redundancia)
+  // Toast Notification
   function showToast(message, type = 'info') {
     toastContainer.innerHTML = '';
     const toast = document.createElement('div');
@@ -218,7 +250,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => {
       toast.classList.add('opacity-0', 'translate-y-2');
       setTimeout(() => toast.remove(), 250);
-    }, 2500);
+    }, 2800);
   }
 
   // Servidores STUN/TURN
@@ -235,33 +267,162 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   } catch (e) {}
 
-  // ================= 3. INICIO DE SESIÓN / CONEXIÓN =================
-  // Opción A: Esperar conexión en mi propio número permanente
-  btnWaitConnection.addEventListener('click', async () => {
-    const name = userNameInput.value.trim() || 'Usuario-' + myDeviceId.substring(0, 4);
-    localStorage.setItem('conecty_user_name', name);
-    await startSession(name, 'device-' + myDeviceId);
+  // ================= 3. CONEXIÓN SOCKET Y REGISTRO EN LÍNEA =================
+  const socket = io({
+    transports: ['websocket'],
+    upgrade: false
   });
 
-  // Opción B: Conectar a otro número permanente
-  connectRemoteForm.addEventListener('submit', async (e) => {
+  function registerMyDeviceOnServer() {
+    const currentName = userNameInput.value.trim() || ('Usuario-' + myDeviceId.substring(0, 4));
+    socket.emit('register-device', {
+      deviceId: myDeviceId,
+      userName: currentName
+    });
+  }
+
+  socket.on('connect', () => {
+    registerMyDeviceOnServer();
+  });
+
+  userNameInput.addEventListener('input', () => {
+    const newName = userNameInput.value.trim();
+    if (newName) {
+      localStorage.setItem('conecty_user_name', newName);
+      socket.emit('update-device-name', { userName: newName });
+    }
+  });
+
+  // ================= 4. FLUJO DE AUTORIZACIÓN DE CONEXIONES =================
+  let currentIncomingRequestId = null;
+  let currentOutgoingRequestId = null;
+
+  // A) EL ANFITRIÓN RECIBE UNA SOLICITUD ENTRANTE
+  socket.on('incoming-connection-request', (data) => {
+    currentIncomingRequestId = data.requestId;
+
+    incomingRequesterName.textContent = data.requesterName || 'Usuario Remoto';
+    incomingRequesterDeviceId.textContent = formatDeviceId(data.requesterDeviceId || '---');
+    incomingRequesterAvatar.textContent = (data.requesterName || 'US').substring(0, 2).toUpperCase();
+
+    incomingRequestModal.classList.remove('hidden');
+    soundEffects.startIncomingCallRing();
+    if (window.lucide) lucide.createIcons();
+  });
+
+  // El solicitante canceló la petición antes de que respondiéramos
+  socket.on('incoming-request-cancelled', ({ requestId }) => {
+    if (currentIncomingRequestId === requestId) {
+      currentIncomingRequestId = null;
+      soundEffects.stopIncomingCallRing();
+      incomingRequestModal.classList.add('hidden');
+      showToast('ℹ️ El solicitante canceló la petición de conexión', 'info');
+    }
+  });
+
+  // Botón Anfitrión: Autorizar y Conectar
+  btnAcceptConnection.addEventListener('click', async () => {
+    if (!currentIncomingRequestId) return;
+    const reqId = currentIncomingRequestId;
+    currentIncomingRequestId = null;
+    soundEffects.stopIncomingCallRing();
+    incomingRequestModal.classList.add('hidden');
+
+    socket.emit('respond-connection-request', { requestId: reqId, accepted: true });
+
+    // Si el anfitrión todavía estaba en el lobby, ingresar a la sala
+    if (!currentRoomId) {
+      const name = userNameInput.value.trim() || ('Usuario-' + myDeviceId.substring(0, 4));
+      await startSession(name, 'device-' + myDeviceId);
+    }
+    showToast('✅ Conexión autorizada', 'success');
+  });
+
+  // Botón Anfitrión: Rechazar
+  btnRejectConnection.addEventListener('click', () => {
+    if (!currentIncomingRequestId) return;
+    const reqId = currentIncomingRequestId;
+    currentIncomingRequestId = null;
+    soundEffects.stopIncomingCallRing();
+    incomingRequestModal.classList.add('hidden');
+
+    socket.emit('respond-connection-request', { requestId: reqId, accepted: false });
+    showToast('Solicitud de conexión rechazada', 'info');
+  });
+
+  // B) EL INVITADO SOLICITA CONEXIÓN A OTRO EQUIPO
+  connectRemoteForm.addEventListener('submit', (e) => {
     e.preventDefault();
-    const name = userNameInput.value.trim() || 'Usuario-' + myDeviceId.substring(0, 4);
+    const name = userNameInput.value.trim() || ('Usuario-' + myDeviceId.substring(0, 4));
     localStorage.setItem('conecty_user_name', name);
 
     let targetRaw = targetDeviceIdInput.value.replace(/\D/g, '');
-    if (!targetRaw) {
-      targetRaw = targetDeviceIdInput.value.trim().toLowerCase();
-    }
     if (!targetRaw) {
       showToast('Por favor introduce el número de 9 dígitos del destino', 'info');
       return;
     }
 
-    const roomId = targetRaw.startsWith('device-') ? targetRaw : (targetRaw.length === 9 ? 'device-' + targetRaw : targetRaw);
-    await startSession(name, roomId);
+    if (targetRaw === myDeviceId) {
+      showToast('No puedes solicitar conexión a tu propio número', 'info');
+      return;
+    }
+
+    // Mostrar modal de espera
+    waitingTargetIdDisplay.textContent = formatDeviceId(targetRaw);
+    waitingHostNameText.textContent = 'el anfitrión';
+    waitingApprovalModal.classList.remove('hidden');
+
+    // Emitir solicitud al servidor
+    socket.emit('request-connection', {
+      targetDeviceId: targetRaw,
+      requesterName: name
+    });
   });
 
+  // Confirmación de solicitud enviada
+  socket.on('connection-request-sent', ({ requestId, hostName, targetDeviceId }) => {
+    currentOutgoingRequestId = requestId;
+    waitingHostNameText.textContent = hostName || 'el anfitrión';
+  });
+
+  // Respuesta a la solicitud del invitado
+  socket.on('connection-response', async (res) => {
+    waitingApprovalModal.classList.add('hidden');
+    currentOutgoingRequestId = null;
+
+    if (res.status === 'accepted') {
+      const name = userNameInput.value.trim() || ('Usuario-' + myDeviceId.substring(0, 4));
+      showToast(`🎉 Conexión autorizada por ${res.hostName || 'el anfitrión'}`, 'success');
+      await startSession(name, res.roomId);
+    } else if (res.status === 'rejected') {
+      showToast('⛔ Solicitud rechazada: El anfitrión no autorizó el acceso', 'info');
+    } else if (res.status === 'offline') {
+      showToast(res.message || '⚠️ El equipo no está en línea en Conecty en este momento', 'info');
+    } else if (res.status === 'timeout') {
+      showToast('⌛ Tiempo de espera agotado. El anfitrión no respondió la solicitud', 'info');
+    } else if (res.status === 'error') {
+      showToast('⚠️ ' + (res.message || 'Error al conectar'), 'info');
+    }
+  });
+
+  // Botón Invitado: Cancelar espera de autorización
+  btnCancelWaitingApproval.addEventListener('click', () => {
+    if (currentOutgoingRequestId) {
+      socket.emit('cancel-connection-request', { requestId: currentOutgoingRequestId });
+      currentOutgoingRequestId = null;
+    }
+    waitingApprovalModal.classList.add('hidden');
+    showToast('Solicitud de conexión cancelada', 'info');
+  });
+
+  // C) ABRIR Y ESPERAR CONEXIÓN (ANFITRIÓN)
+  btnWaitConnection.addEventListener('click', async () => {
+    const name = userNameInput.value.trim() || ('Usuario-' + myDeviceId.substring(0, 4));
+    localStorage.setItem('conecty_user_name', name);
+    await startSession(name, 'device-' + myDeviceId);
+  });
+
+  // ================= 5. INICIALIZACIÓN DE LA SESIÓN EN SALA =================
   async function startSession(userName, roomId) {
     currentRoomId = roomId;
     const cleanRoomDisplay = roomId.replace(/^device-/, '');
@@ -270,56 +431,54 @@ document.addEventListener('DOMContentLoaded', async () => {
     const newUrl = `${window.location.origin}/?connect=${cleanRoomDisplay}`;
     window.history.pushState({ path: newUrl }, '', newUrl);
 
-    // Conexión WebSockets instantánea
-    socket = io({
-      transports: ['websocket'],
-      upgrade: false
-    });
-
     // Controlador Láser
-    laser = new LaserController(laserCanvas, screenVideo, (pointerData) => {
-      const sentP2P = webrtc ? webrtc.broadcastData({ type: 'laser', ...pointerData }) : false;
-      if (!sentP2P && socket) {
-        socket.emit('laser-pointer', pointerData);
-      }
-    });
-
-    // WebRTC Manager
-    webrtc = new WebRTCManager({
-      socket,
-      iceServers,
-      onRemoteStream: (peerId, stream, track) => {
-        if (track.kind === 'audio') {
-          handleRemoteAudio(peerId, stream);
-        } else if (track.kind === 'video') {
-          handleRemoteVideo(peerId, stream);
+    if (!laser) {
+      laser = new LaserController(laserCanvas, screenVideo, (pointerData) => {
+        const sentP2P = webrtc ? webrtc.broadcastData({ type: 'laser', ...pointerData }) : false;
+        if (!sentP2P && socket) {
+          socket.emit('laser-pointer', pointerData);
         }
-      },
-      onRemoteLeave: (peerId) => {
-        removeParticipant(peerId);
-      },
-      onDataChannelMessage: (peerId, data) => {
-        if (data.type === 'laser') {
-          const user = participants.get(peerId);
-          laser.handleRemotePointer({
-            ...data,
-            senderId: peerId,
-            senderName: user ? user.name : 'Operador'
-          });
-        }
-      }
-    });
-
-    // Inicializar micrófono local para la llamada antes de unirse
-    const audioStream = await webrtc.initLocalAudio();
-    if (audioStream) {
-      showToast('🎙️ Micrófono listo y llamada de voz activa', 'success');
-      monitorLocalVoice(audioStream);
-    } else {
-      showToast('⚠️ No se detectó micrófono. Podrás escuchar la llamada.', 'info');
+      });
     }
 
-    setupSocketEvents();
+    // WebRTC Manager
+    if (!webrtc) {
+      webrtc = new WebRTCManager({
+        socket,
+        iceServers,
+        onRemoteStream: (peerId, stream, track) => {
+          if (track.kind === 'audio') {
+            handleRemoteAudio(peerId, stream);
+          } else if (track.kind === 'video') {
+            handleRemoteVideo(peerId, stream);
+          }
+        },
+        onRemoteLeave: (peerId) => {
+          removeParticipant(peerId);
+        },
+        onDataChannelMessage: (peerId, data) => {
+          if (data.type === 'laser') {
+            const user = participants.get(peerId);
+            laser.handleRemotePointer({
+              ...data,
+              senderId: peerId,
+              senderName: user ? user.name : 'Operador'
+            });
+          }
+        }
+      });
+
+      // Inicializar micrófono local
+      const audioStream = await webrtc.initLocalAudio();
+      if (audioStream) {
+        showToast('🎙️ Micrófono listo y llamada de voz activa', 'success');
+        monitorLocalVoice(audioStream);
+      } else {
+        showToast('⚠️ No se detectó micrófono. Podrás escuchar la llamada.', 'info');
+      }
+
+      setupRoomSocketEvents();
+    }
 
     socket.emit('join-room', {
       roomId,
@@ -334,7 +493,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     showToast(`Conectado al puesto ${formatDeviceId(cleanRoomDisplay)}`, 'success');
   }
 
-  // Monitor del micrófono local para ver cuándo hablo
+  // Monitor del micrófono local para ecualizador
   function monitorLocalVoice(stream) {
     try {
       const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -369,7 +528,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (e) {}
   }
 
-  // Monitor de audio remoto para ver cuándo habla el compañero
+  // Monitor de audio remoto para ecualizador
   function monitorRemoteVoice(peerId, stream) {
     try {
       const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -404,7 +563,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (e) {}
   }
 
-  function setupSocketEvents() {
+  // Eventos de Socket en Sala
+  let roomEventsRegistered = false;
+  function setupRoomSocketEvents() {
+    if (roomEventsRegistered) return;
+    roomEventsRegistered = true;
+
     socket.on('room-joined', ({ user, existingUsers }) => {
       myUser = user;
       updateParticipantsList(existingUsers);
@@ -416,13 +580,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     });
 
+    socket.on('room-join-denied', ({ reason }) => {
+      showToast('⛔ ' + (reason || 'Acceso denegado a la sala'), 'info');
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 2000);
+    });
+
     socket.on('user-connected', (user) => {
       soundEffects.join();
       showToast(`${user.name} se conectó a la sesión`, 'info');
       participants.set(user.id, user);
       renderParticipants();
 
-      if (isSharingScreen && webrtc.localScreenStream) {
+      if (isSharingScreen && webrtc && webrtc.localScreenStream) {
         const peerObj = webrtc.getOrCreatePeer(user.id, true);
         webrtc.localScreenStream.getTracks().forEach((track) => {
           const sender = peerObj.pc.addTrack(track, webrtc.localScreenStream);
@@ -433,19 +604,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     socket.on('offer', async ({ callerId, offer }) => {
-      await webrtc.handleOffer(callerId, offer);
+      if (webrtc) await webrtc.handleOffer(callerId, offer);
     });
 
     socket.on('answer', async ({ responderId, answer }) => {
-      await webrtc.handleAnswer(responderId, answer);
+      if (webrtc) await webrtc.handleAnswer(responderId, answer);
     });
 
     socket.on('ice-candidate', async ({ senderId, candidate }) => {
-      await webrtc.handleCandidate(senderId, candidate);
+      if (webrtc) await webrtc.handleCandidate(senderId, candidate);
     });
 
     socket.on('laser-pointer', (data) => {
-      laser.handleRemotePointer(data);
+      if (laser) laser.handleRemotePointer(data);
     });
 
     socket.on('user-screen-updated', ({ userId, isSharing }) => {
@@ -473,7 +644,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     socket.on('user-disconnected', ({ userId, userName }) => {
       soundEffects.leave();
       showToast(`${userName} se desconectó`, 'info');
-      webrtc.closePeer(userId);
+      if (webrtc) webrtc.closePeer(userId);
       removeParticipant(userId);
     });
   }
@@ -501,7 +672,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     monitorRemoteVoice(peerId, stream);
   }
 
-  // ================= 4. CONTROLES DE PANTALLA & MODO ANTI-ESPEJO =================
+  // ================= 6. CONTROLES DE PANTALLA & MODO ANTI-ESPEJO =================
   let currentZoom = 1.0;
   let currentFitMode = 'contain';
 
@@ -619,8 +790,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     currentFitMode = 'contain';
     updateScreenDisplay();
 
-    laser.clearCanvas();
-    laser.resizeCanvas();
+    if (laser) {
+      laser.clearCanvas();
+      laser.resizeCanvas();
+    }
     showToast(`Mostrando pantalla de ${user ? user.name : 'compañero'}`, 'success');
   }
 
@@ -636,7 +809,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!remoteSharing) {
       screenVideo.srcObject = null;
       videoWrapper.classList.add('hidden');
-      laser.clearCanvas();
+      if (laser) laser.clearCanvas();
 
       if (isSharingScreen) {
         sharerActiveCard.classList.remove('hidden');
@@ -662,7 +835,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     checkScreenSharingState();
   }
 
-  // ================= 5. TARJETAS DE LLAMADA DE VOZ Y PARTICIPANTES =================
+  // ================= 7. TARJETAS DE LLAMADA DE VOZ Y PARTICIPANTES =================
   function renderParticipants() {
     const totalCount = participants.size + 1;
     participantsCount.textContent = `${totalCount} en sesión`;
@@ -724,6 +897,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Compartir Pantalla con Protección Anti-Espejo
   async function toggleScreenShare() {
+    if (!webrtc) return;
+
     if (isSharingScreen) {
       await webrtc.stopScreenShare();
       isSharingScreen = false;

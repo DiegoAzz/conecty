@@ -71,7 +71,7 @@
 <body class="h-full flex flex-col overflow-hidden select-none">
 
   <!-- ================= VISTA DE LOBBY / INGRESO (ESTILO ANYDESK CON ID FIJO) ================= -->
-  <div id="lobbyView" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/95 backdrop-blur-md overflow-y-auto custom-scrollbar">
+  <div id="lobbyView" class="fixed inset-0 z-40 flex items-center justify-center p-4 bg-slate-950/95 backdrop-blur-md overflow-y-auto custom-scrollbar">
     <div class="w-full max-w-4xl py-6 flex flex-col items-center">
       
       <!-- Logo Superior -->
@@ -164,7 +164,7 @@
               </div>
 
               <div class="p-3.5 rounded-2xl bg-slate-900/40 border border-slate-800 text-[11px] text-slate-400 leading-relaxed">
-                💡 <strong class="text-slate-300">Conexión directa P2P</strong>: No requiere instalar nada ni tener la misma red Wi-Fi; funciona entre cualquier dispositivo por internet.
+                🛡️ <strong class="text-slate-300">Acceso Seguro con Autorización</strong>: El anfitrión del equipo deberá aprobar tu solicitud en pantalla antes de conectar.
               </div>
 
               <button type="submit" id="btnConnectRemote" class="w-full py-3.5 px-4 bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white font-semibold rounded-xl shadow-lg shadow-indigo-600/30 transition flex items-center justify-center space-x-2">
@@ -175,8 +175,8 @@
           </div>
 
           <div class="mt-6 pt-4 border-t border-slate-800 text-xs text-slate-500 flex items-center justify-center space-x-4">
-            <span class="flex items-center"><i data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-400 mr-1"></i> DTLS P2P</span>
-            <span class="flex items-center"><i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400 mr-1"></i> ID Fijo por Dispositivo</span>
+            <span class="flex items-center"><i data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-400 mr-1"></i> Autorización Previa</span>
+            <span class="flex items-center"><i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400 mr-1"></i> DTLS P2P Cifrado</span>
           </div>
         </div>
 
@@ -439,6 +439,108 @@
 
     </footer>
 
+  </div>
+
+  <!-- ================= MODAL: SOLICITUD DE CONEXIÓN ENTRANTE (HOST / ANFITRIÓN) ================= -->
+  <div id="incomingRequestModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md hidden transition-all duration-300">
+    <div class="w-full max-w-md glass-panel p-6 md:p-7 rounded-3xl border border-indigo-500/40 shadow-2xl relative overflow-hidden transform transition-all">
+      
+      <!-- Efecto de Luz Pulsante -->
+      <div class="absolute -top-16 -right-16 w-36 h-36 bg-indigo-600/30 rounded-full blur-2xl pointer-events-none"></div>
+      <div class="absolute -bottom-16 -left-16 w-36 h-36 bg-emerald-600/20 rounded-full blur-2xl pointer-events-none"></div>
+
+      <div class="flex items-center space-x-3 mb-5">
+        <div class="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/30 text-amber-400 flex items-center justify-center relative shadow-inner">
+          <i data-lucide="bell-ring" class="w-6 h-6 animate-bounce"></i>
+          <span class="absolute -top-1 -right-1 w-3 h-3 bg-amber-400 rounded-full animate-ping"></span>
+        </div>
+        <div>
+          <h3 class="text-base font-bold text-white">Solicitud de Conexión</h3>
+          <p class="text-xs text-amber-400 font-semibold flex items-center">
+            <span class="w-1.5 h-1.5 rounded-full bg-amber-400 mr-1.5 animate-pulse"></span>
+            Esperando tu autorización
+          </p>
+        </div>
+      </div>
+
+      <!-- Tarjeta del Solicitante -->
+      <div class="p-4 rounded-2xl bg-slate-900/90 border border-slate-700/80 mb-5 shadow-inner">
+        <div class="flex items-center space-x-3.5">
+          <div id="incomingRequesterAvatar" class="w-11 h-11 rounded-xl bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 font-extrabold text-base flex items-center justify-center">
+            US
+          </div>
+          <div>
+            <div id="incomingRequesterName" class="font-bold text-sm text-white">Usuario Remoto</div>
+            <div class="text-xs text-slate-400 font-mono flex items-center space-x-1.5 mt-0.5">
+              <span>Número Conecty:</span>
+              <span id="incomingRequesterDeviceId" class="text-indigo-300 font-bold">--- --- ---</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Permisos que se otorgarán -->
+      <div class="mb-6 space-y-2 text-xs text-slate-300 bg-slate-900/40 p-3.5 rounded-2xl border border-slate-800">
+        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Permisos solicitados:</div>
+        <div class="flex items-center space-x-2 text-slate-300">
+          <i data-lucide="mic" class="w-3.5 h-3.5 text-emerald-400"></i>
+          <span>Llamada de voz bidireccional en tiempo real</span>
+        </div>
+        <div class="flex items-center space-x-2 text-slate-300">
+          <i data-lucide="monitor" class="w-3.5 h-3.5 text-indigo-400"></i>
+          <span>Transmisión y visualización de pantalla compartida</span>
+        </div>
+        <div class="flex items-center space-x-2 text-slate-300">
+          <i data-lucide="mouse-pointer" class="w-3.5 h-3.5 text-rose-400"></i>
+          <span>Puntero láser interactivo y anotaciones en vivo</span>
+        </div>
+      </div>
+
+      <!-- Botones de Acción -->
+      <div class="grid grid-cols-2 gap-3">
+        <button id="btnRejectConnection" class="py-3 px-4 bg-slate-800 hover:bg-rose-600/20 text-slate-300 hover:text-rose-300 font-semibold rounded-xl border border-slate-700 hover:border-rose-500/40 transition flex items-center justify-center space-x-2 text-xs shadow">
+          <i data-lucide="x" class="w-4 h-4"></i>
+          <span>Rechazar</span>
+        </button>
+        <button id="btnAcceptConnection" class="py-3 px-4 bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white font-semibold rounded-xl shadow-lg shadow-emerald-600/30 transition flex items-center justify-center space-x-2 text-xs">
+          <i data-lucide="shield-check" class="w-4 h-4"></i>
+          <span>Autorizar y Conectar</span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================= MODAL: ESPERANDO AUTORIZACIÓN (GUEST / INVITADO) ================= -->
+  <div id="waitingApprovalModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md hidden transition-all duration-300">
+    <div class="w-full max-w-sm glass-panel p-6 rounded-3xl border border-slate-700/80 shadow-2xl text-center relative overflow-hidden">
+      
+      <div class="w-16 h-16 mx-auto rounded-3xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 mb-4 relative shadow-inner">
+        <i data-lucide="shield-alert" class="w-8 h-8 animate-pulse"></i>
+        <span class="absolute inset-0 rounded-3xl border-2 border-indigo-400 animate-ping opacity-25"></span>
+      </div>
+
+      <h3 class="text-base font-bold text-white mb-1">Solicitando Conexión</h3>
+      <p class="text-xs text-slate-400 mb-4">
+        Destino: <strong id="waitingTargetIdDisplay" class="text-indigo-300 font-mono font-bold">--- --- ---</strong>
+      </p>
+
+      <div class="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 mb-5 text-[11px] text-slate-300 leading-relaxed text-left">
+        <div class="flex items-center space-x-2 mb-1 text-emerald-400 font-semibold">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+          <span>Esperando autorización</span>
+        </div>
+        <p class="text-slate-400">
+          El anfitrión <strong id="waitingHostNameText" class="text-slate-200">Usuario</strong> debe aceptar tu solicitud en su pantalla antes de que comience la conexión.
+        </p>
+      </div>
+
+      <button id="btnCancelWaitingApproval" class="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl border border-slate-700 transition flex items-center justify-center space-x-1.5 shadow">
+        <i data-lucide="x" class="w-3.5 h-3.5"></i>
+        <span>Cancelar Solicitud</span>
+      </button>
+
+    </div>
   </div>
 
   <!-- Toast de Notificaciones -->
