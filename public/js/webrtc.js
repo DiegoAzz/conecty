@@ -172,9 +172,11 @@ class WebRTCManager {
         video: {
           cursor: 'always',
           displaySurface: 'monitor',
+          width: { ideal: 1920, max: 3840 },
+          height: { ideal: 1080, max: 2160 },
+          frameRate: { ideal: 60, max: 60 },
           selfBrowserSurface: 'exclude', // Evita seleccionar accidentalmente la misma pestaña y previene el efecto espejo
-          surfaceSwitching: 'include',
-          frameRate: { ideal: 60, max: 60 }
+          surfaceSwitching: 'include'
         },
         audio: true
       });
@@ -195,6 +197,18 @@ class WebRTCManager {
         this.localScreenStream.getTracks().forEach((track) => {
           const sender = pc.addTrack(track, this.localScreenStream);
           peerObj.screenSenders.push(sender);
+
+          // Configurar 8 Mbps para nitidez cristalina en documentos, código y texto
+          if (track.kind === 'video' && sender.setParameters) {
+            try {
+              const params = sender.getParameters();
+              if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
+              params.encodings[0].maxBitrate = 8000000;
+              params.encodings[0].priority = 'high';
+              params.encodings[0].networkPriority = 'high';
+              sender.setParameters(params).catch(() => {});
+            } catch (e) {}
+          }
         });
         // Re-negociar explícitamente para transmitir el nuevo video
         await this.renegotiate(peerId);

@@ -122,6 +122,31 @@ document.addEventListener('DOMContentLoaded', async () => {
   const remoteAudios = document.getElementById('remoteAudios');
   const toastContainer = document.getElementById('toastContainer');
 
+  // Nuevos Elementos: Libreta de Direcciones / Historial
+  const savedSessionsSection = document.getElementById('savedSessionsSection');
+  const savedSessionsGrid = document.getElementById('savedSessionsGrid');
+  const savedSessionsCount = document.getElementById('savedSessionsCount');
+
+  // Grabador de Sesión
+  const btnRecordSession = document.getElementById('btnRecordSession');
+  const recDot = document.getElementById('recDot');
+  const recText = document.getElementById('recText');
+  const recTimer = document.getElementById('recTimer');
+
+  // Pestañas Multi-Pantalla
+  const multiScreenTabsBar = document.getElementById('multiScreenTabsBar');
+  const multiScreenTabs = document.getElementById('multiScreenTabs');
+
+  // Panel Lateral de Participantes & Moderación
+  const btnToggleParticipants = document.getElementById('btnToggleParticipants');
+  const btnCloseParticipants = document.getElementById('btnCloseParticipants');
+  const participantsSidebar = document.getElementById('participantsSidebar');
+  const participantsListDrawer = document.getElementById('participantsListDrawer');
+  const activeControllerBadge = document.getElementById('activeControllerBadge');
+  const btnMuteAllUsers = document.getElementById('btnMuteAllUsers');
+  const btnRevokeControlAll = document.getElementById('btnRevokeControlAll');
+  const revokeControlContainer = document.getElementById('revokeControlContainer');
+
   // ================= 1. GESTIÓN DE ID Y CONFIGURACIONES (ANYDESK STYLE) =================
   let myDeviceId = localStorage.getItem('conecty_device_id');
   if (!myDeviceId || myDeviceId.length !== 9 || !/^\d+$/.test(myDeviceId)) {
@@ -197,6 +222,131 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   populateSettingsModal();
+
+  // ================= GESTIÓN DE SESIONES GUARDADAS (LIBRETA DE DIRECCIONES) =================
+  function getSavedSessions() {
+    try {
+      const data = localStorage.getItem('conecty_saved_sessions');
+      return data ? JSON.parse(data) : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveSessionToHistory(deviceId, name) {
+    if (!deviceId) return;
+    const clean = deviceId.toString().replace(/\D/g, '');
+    if (clean.length !== 9 || clean === myDeviceId) return;
+
+    let sessions = getSavedSessions();
+    const existingIndex = sessions.findIndex(s => s.deviceId === clean);
+
+    if (existingIndex >= 0) {
+      sessions[existingIndex].lastConnected = new Date().toISOString();
+      if (!sessions[existingIndex].customAlias && name) {
+        sessions[existingIndex].customAlias = name;
+      }
+    } else {
+      sessions.unshift({
+        deviceId: clean,
+        originalName: name || ('Equipo-' + clean.substring(0, 4)),
+        customAlias: name || ('Equipo-' + clean.substring(0, 4)),
+        lastConnected: new Date().toISOString()
+      });
+    }
+
+    if (sessions.length > 20) sessions = sessions.slice(0, 20);
+    localStorage.setItem('conecty_saved_sessions', JSON.stringify(sessions));
+    renderSavedSessions();
+  }
+
+  function updateSessionAlias(deviceId, newAlias) {
+    let sessions = getSavedSessions();
+    const item = sessions.find(s => s.deviceId === deviceId);
+    if (item && newAlias && newAlias.trim()) {
+      item.customAlias = newAlias.trim();
+      localStorage.setItem('conecty_saved_sessions', JSON.stringify(sessions));
+      renderSavedSessions();
+      showToast('Nombre actualizado: ' + item.customAlias, 'success');
+    }
+  }
+
+  function deleteSavedSession(deviceId) {
+    let sessions = getSavedSessions().filter(s => s.deviceId !== deviceId);
+    localStorage.setItem('conecty_saved_sessions', JSON.stringify(sessions));
+    renderSavedSessions();
+    showToast('Equipo eliminado del historial', 'info');
+  }
+
+  function renderSavedSessions() {
+    if (!savedSessionsGrid) return;
+    const sessions = getSavedSessions();
+
+    if (sessions.length === 0) {
+      savedSessionsSection.classList.add('hidden');
+      return;
+    }
+
+    savedSessionsSection.classList.remove('hidden');
+    savedSessionsCount.textContent = sessions.length + (sessions.length === 1 ? ' equipo' : ' equipos');
+    savedSessionsGrid.innerHTML = '';
+
+    sessions.forEach((s) => {
+      const card = document.createElement('div');
+      card.className = 'p-3.5 rounded-2xl bg-slate-900/80 border border-slate-700/70 flex items-center justify-between hover:border-indigo-500/40 transition group';
+      
+      const dateStr = new Date(s.lastConnected).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+      card.innerHTML = `
+        <div class="flex items-center space-x-3 overflow-hidden">
+          <div class="w-9 h-9 rounded-xl bg-indigo-600/20 text-indigo-400 flex items-center justify-center shrink-0 border border-indigo-500/30">
+            <i data-lucide="laptop" class="w-4 h-4"></i>
+          </div>
+          <div class="overflow-hidden">
+            <div class="flex items-center space-x-1.5">
+              <span class="font-bold text-white text-xs truncate">${escapeHtml(s.customAlias)}</span>
+              <button class="btn-edit-alias opacity-0 group-hover:opacity-100 text-slate-400 hover:text-indigo-400 transition" title="Renombrar alias">
+                <i data-lucide="edit-2" class="w-3 h-3"></i>
+              </button>
+            </div>
+            <div class="text-[10px] text-slate-400 font-mono">${formatDeviceId(s.deviceId)} • ${dateStr}</div>
+          </div>
+        </div>
+        <div class="flex items-center space-x-1.5 shrink-0 ml-2">
+          <button class="btn-quick-connect px-2.5 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white text-xs font-semibold border border-emerald-500/30 transition flex items-center space-x-1">
+            <i data-lucide="arrow-right" class="w-3 h-3"></i>
+            <span>Conectar</span>
+          </button>
+          <button class="btn-del-session p-1.5 rounded-xl hover:bg-slate-800 text-slate-500 hover:text-rose-400 transition" title="Eliminar del historial">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
+      `;
+
+      card.querySelector('.btn-quick-connect').addEventListener('click', () => {
+        targetDeviceIdInput.value = formatDeviceId(s.deviceId);
+        connectRemoteForm.dispatchEvent(new Event('submit'));
+      });
+
+      card.querySelector('.btn-edit-alias').addEventListener('click', () => {
+        const alias = prompt('Introduce un nombre para identificar este equipo:', s.customAlias);
+        if (alias) updateSessionAlias(s.deviceId, alias);
+      });
+
+      card.querySelector('.btn-del-session').addEventListener('click', () => {
+        if (confirm('¿Eliminar ' + s.customAlias + ' del historial?')) {
+          deleteSavedSession(s.deviceId);
+        }
+      });
+
+      savedSessionsGrid.appendChild(card);
+    });
+
+    if (window.lucide) lucide.createIcons();
+  }
+
+  renderSavedSessions();
+
 
   // Guardar cambios al interactuar en el modal de configuración
   settingUserName.addEventListener('change', () => {
@@ -765,6 +915,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     soundEffects.join();
     showToast(`Conectado al puesto ${formatDeviceId(cleanRoomDisplay)}`, 'success');
+    saveSessionToHistory(cleanRoomDisplay, 'Puesto-' + cleanRoomDisplay.substring(0, 4));
   }
 
   // ================= 6. MODO CONTROL REMOTO DE RATÓN Y TECLADO =================
@@ -1067,9 +1218,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (roomEventsRegistered) return;
     roomEventsRegistered = true;
 
-    socket.on('room-joined', ({ user, existingUsers }) => {
+    socket.on('room-joined', ({ user, existingUsers, hostId }) => {
       myUser = user;
+      isHost = (user.isHost || hostId === socket.id);
       updateParticipantsList(existingUsers);
+      renderParticipantsDrawer();
 
       const hasAgent = existingUsers.some((u) => u.isAgent || u.name === 'Windows-Native-Agent');
       if (hasAgent) {
@@ -1088,6 +1241,56 @@ document.addEventListener('DOMContentLoaded', async () => {
       setTimeout(() => {
         window.location.href = '/';
       }, 2000);
+    });
+
+    socket.on('mouse-control-changed', ({ authorizedUserId, authorizedUserName }) => {
+      authorizedControllerId = authorizedUserId;
+      if (authorizedUserId === socket.id) {
+        isRemoteControlActive = true;
+        btnToggleControl.classList.remove('bg-slate-800');
+        btnToggleControl.classList.add('bg-emerald-600', 'hover:bg-emerald-500', 'text-white');
+        if (remoteControlBanner) {
+          remoteControlBanner.classList.remove('hidden');
+          remoteControlBannerText.textContent = '🎮 Control Remoto Activo: Puedes interactuar con el mouse y teclado';
+        }
+        showToast('🎮 ¡El moderador te ha otorgado el control del ratón y teclado!', 'success');
+      } else {
+        if (!isHost) {
+          isRemoteControlActive = false;
+          btnToggleControl.classList.remove('bg-emerald-600', 'hover:bg-emerald-500', 'text-white');
+          btnToggleControl.classList.add('bg-slate-800');
+          if (remoteControlBanner) {
+            if (authorizedUserId) {
+              remoteControlBanner.classList.remove('hidden');
+              remoteControlBannerText.textContent = 'Control asignado a: ' + authorizedUserName;
+            } else {
+              remoteControlBanner.classList.add('hidden');
+            }
+          }
+        }
+      }
+      renderParticipantsDrawer();
+    });
+
+    socket.on('force-mute', () => {
+      if (webrtc && !webrtc.isMicMuted) {
+        webrtc.toggleMicrophone();
+        micIcon.className = 'w-4 h-4 text-rose-400';
+        micText.textContent = 'Silenciado';
+        showToast('🔇 El moderador ha silenciado tu micrófono', 'info');
+        renderParticipants();
+      }
+    });
+
+    socket.on('kicked-from-room', () => {
+      alert('Has sido expulsado de la sesión por el moderador.');
+      window.location.href = '/';
+    });
+
+    socket.on('host-changed', ({ newHostId, newHostName }) => {
+      isHost = (newHostId === socket.id);
+      showToast('👑 ' + (isHost ? 'Ahora eres el anfitrión de la sala' : newHostName + ' es el nuevo anfitrión'), 'info');
+      renderParticipantsDrawer();
     });
 
     socket.on('user-connected', (user) => {
@@ -1302,6 +1505,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     screenVideo.srcObject = stream;
     screenVideo.play().catch((e) => console.warn('Error al reproducir video:', e));
 
+    registerActiveScreen(peerId, stream, user ? user.name : 'Compañero');
     idleScreen.classList.add('hidden');
     sharerActiveCard.classList.add('hidden');
     videoWrapper.classList.remove('hidden');
@@ -1359,6 +1563,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function removeParticipant(peerId) {
     participants.delete(peerId);
+    unregisterActiveScreen(peerId);
+    renderParticipantsDrawer();
     const audioElement = document.getElementById(`audio-${peerId}`);
     if (audioElement) audioElement.remove();
     renderParticipants();
@@ -1613,3 +1819,382 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 });
+
+
+  // ================= GRABADOR DE SESIÓN (PANTALLA + AUDIO) =================
+  let mediaRecorder = null;
+  let recordedChunks = [];
+  let recInterval = null;
+  let recSeconds = 0;
+  let isRecording = false;
+
+  function formatRecTime(sec) {
+    const m = Math.floor(sec / 60).toString().padStart(2, '0');
+    const s = (sec % 60).toString().padStart(2, '0');
+    return m + ':' + s;
+  }
+
+  async function toggleSessionRecording() {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      await startRecording();
+    }
+  }
+
+  async function startRecording() {
+    // Determinar stream a grabar
+    let streamToRecord = null;
+    if (screenVideo && screenVideo.srcObject && screenVideo.srcObject.getVideoTracks().length > 0) {
+      streamToRecord = screenVideo.srcObject;
+    } else if (webrtc && webrtc.localScreenStream) {
+      streamToRecord = webrtc.localScreenStream;
+    }
+
+    if (!streamToRecord) {
+      showToast('⚠️ No hay ninguna pantalla compartida activa para grabar', 'info');
+      return;
+    }
+
+    try {
+      // Combinar audio de la llamada si está disponible
+      const tracks = [...streamToRecord.getVideoTracks()];
+      if (webrtc && webrtc.localAudioStream) {
+        tracks.push(...webrtc.localAudioStream.getAudioTracks());
+      }
+      const combinedStream = new MediaStream(tracks);
+
+      let mimeType = 'video/webm;codecs=vp9,opus';
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = 'video/webm;codecs=vp8,opus';
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+          mimeType = 'video/webm';
+        }
+      }
+
+      mediaRecorder = new MediaRecorder(combinedStream, { mimeType });
+      recordedChunks = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          recordedChunks.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        if (recordedChunks.length === 0) return;
+        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        a.download = 'Conecty-Grabacion-' + timestamp + '.webm';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          document.body.removeChild(a);
+          window.URL.revokeObjectURL(url);
+        }, 100);
+        showToast('💾 Grabación guardada y descargada con éxito', 'success');
+      };
+
+      mediaRecorder.start(1000); // Guardar chunk cada 1 segundo
+      isRecording = true;
+      recSeconds = 0;
+      recTimer.textContent = '00:00';
+      recTimer.classList.remove('hidden');
+      recDot.classList.add('rec-pulse');
+      recText.textContent = 'Detener';
+      btnRecordSession.classList.remove('bg-slate-800/80');
+      btnRecordSession.classList.add('bg-rose-950/70', 'border-rose-500/50', 'text-rose-300');
+
+      recInterval = setInterval(() => {
+        recSeconds++;
+        recTimer.textContent = formatRecTime(recSeconds);
+      }, 1000);
+
+      showToast('🔴 Grabando sesión en curso...', 'info');
+    } catch (err) {
+      console.error('Error al iniciar grabación:', err);
+      showToast('No se pudo iniciar la grabación: ' + err.message, 'error');
+    }
+  }
+
+  function stopRecording() {
+    if (mediaRecorder && isRecording) {
+      mediaRecorder.stop();
+      isRecording = false;
+      clearInterval(recInterval);
+      recTimer.classList.add('hidden');
+      recDot.classList.remove('rec-pulse');
+      recText.textContent = 'Grabar';
+      btnRecordSession.classList.add('bg-slate-800/80');
+      btnRecordSession.classList.remove('bg-rose-950/70', 'border-rose-500/50', 'text-rose-300');
+    }
+  }
+
+  if (btnRecordSession) {
+    btnRecordSession.addEventListener('click', toggleSessionRecording);
+  }
+
+
+  // ================= SELECTOR DE MÚLTIPLES PANTALLAS COMPARTIDAS =================
+  const activeScreens = new Map(); // id -> { stream, userName }
+  let currentActiveScreenId = null;
+
+  function registerActiveScreen(id, stream, userName) {
+    activeScreens.set(id, { stream, userName });
+    renderMultiScreenTabs();
+
+    // Si no hay pantalla seleccionada o es la única, mostrarla
+    if (!currentActiveScreenId || !activeScreens.has(currentActiveScreenId)) {
+      selectActiveScreen(id);
+    }
+  }
+
+  function unregisterActiveScreen(id) {
+    activeScreens.delete(id);
+    renderMultiScreenTabs();
+
+    if (currentActiveScreenId === id) {
+      if (activeScreens.size > 0) {
+        const nextId = activeScreens.keys().next().value;
+        selectActiveScreen(nextId);
+      } else {
+        currentActiveScreenId = null;
+        checkScreenSharingState();
+      }
+    }
+  }
+
+  function selectActiveScreen(id) {
+    const screenData = activeScreens.get(id);
+    if (!screenData) return;
+
+    currentActiveScreenId = id;
+    screenVideo.srcObject = screenData.stream;
+    sharerNameText.textContent = 'Pantalla de: ' + screenData.userName;
+
+    idleScreen.classList.add('hidden');
+    sharerActiveCard.classList.add('hidden');
+    videoWrapper.classList.remove('hidden');
+
+    if (laser) {
+      laser.clearCanvas();
+      laser.resizeCanvas();
+    }
+
+    renderMultiScreenTabs();
+  }
+
+  function renderMultiScreenTabs() {
+    if (!multiScreenTabsBar || !multiScreenTabs) return;
+
+    if (activeScreens.size <= 1) {
+      multiScreenTabsBar.classList.add('hidden');
+      return;
+    }
+
+    multiScreenTabsBar.classList.remove('hidden');
+    multiScreenTabs.innerHTML = '';
+
+    activeScreens.forEach((data, id) => {
+      const isSelected = id === currentActiveScreenId;
+      const tab = document.createElement('button');
+      tab.className = 'px-3 py-1 rounded-xl text-xs font-medium flex items-center space-x-1.5 transition ' +
+        (isSelected ? 'bg-indigo-600 text-white font-semibold shadow-md' : 'bg-slate-800 text-slate-300 hover:bg-slate-700');
+      tab.innerHTML = `
+        <i data-lucide="monitor" class="w-3.5 h-3.5"></i>
+        <span>${escapeHtml(data.userName)}</span>
+        ${isSelected ? '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse ml-1"></span>' : ''}
+      `;
+
+      tab.addEventListener('click', () => selectActiveScreen(id));
+      multiScreenTabs.appendChild(tab);
+    });
+
+    if (window.lucide) lucide.createIcons();
+  }
+
+
+  // ================= MODERACIÓN Y PANEL DE PARTICIPANTES =================
+  let isHost = false;
+  let authorizedControllerId = null;
+
+  function toggleParticipantsSidebar() {
+    if (!participantsSidebar) return;
+    const isClosed = participantsSidebar.classList.contains('translate-x-full');
+    if (isClosed) {
+      participantsSidebar.classList.remove('translate-x-full');
+      renderParticipantsDrawer();
+    } else {
+      participantsSidebar.classList.add('translate-x-full');
+    }
+  }
+
+  if (btnToggleParticipants) btnToggleParticipants.addEventListener('click', toggleParticipantsSidebar);
+  if (btnCloseParticipants) btnCloseParticipants.addEventListener('click', toggleParticipantsSidebar);
+
+  function grantMouseControlTo(targetUserId) {
+    if (socket) {
+      socket.emit('grant-mouse-control', { targetUserId });
+    }
+  }
+
+  function revokeAllMouseControl() {
+    if (socket) {
+      socket.emit('revoke-mouse-control');
+    }
+  }
+
+  if (btnRevokeControlAll) btnRevokeControlAll.addEventListener('click', revokeAllMouseControl);
+
+  if (btnMuteAllUsers) {
+    btnMuteAllUsers.addEventListener('click', () => {
+      if (socket) {
+        socket.emit('mute-all-users');
+        showToast('🔇 Silenciaste los micrófonos de todos los participantes', 'info');
+      }
+    });
+  }
+
+  // Tecla Escape para revocar control de inmediato
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && isHost && authorizedControllerId) {
+      revokeAllMouseControl();
+      showToast('🚫 Control revocado (tecla Esc)', 'info');
+    }
+  });
+
+  function renderParticipantsDrawer() {
+    if (!participantsListDrawer) return;
+    participantsListDrawer.innerHTML = '';
+
+    const totalCount = participants.size + 1;
+    participantsCount.textContent = totalCount + (totalCount > 1 ? ' participantes' : ' participante');
+
+    // Estado del badge de control en el moderador
+    if (activeControllerBadge) {
+      if (authorizedControllerId) {
+        const u = participants.get(authorizedControllerId);
+        const name = (authorizedControllerId === socket.id) ? 'Tú' : (u ? u.name : 'Usuario');
+        activeControllerBadge.textContent = 'Control: ' + name;
+        activeControllerBadge.className = 'px-2 py-0.5 rounded-full text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold';
+        if (revokeControlContainer) revokeControlContainer.classList.remove('hidden');
+      } else {
+        activeControllerBadge.textContent = 'Nadie tiene control';
+        activeControllerBadge.className = 'px-2 py-0.5 rounded-full text-[10px] bg-slate-800 text-slate-400 border border-slate-700';
+        if (revokeControlContainer) revokeControlContainer.classList.add('hidden');
+      }
+    }
+
+    // 1. Mi tarjeta en el Drawer
+    const myItem = document.createElement('div');
+    myItem.className = 'p-3 rounded-2xl glass-panel border border-slate-700/60 flex items-center justify-between text-xs text-white';
+    myItem.innerHTML = `
+      <div class="flex items-center space-x-2.5">
+        <div class="w-8 h-8 rounded-xl bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center font-bold text-xs text-indigo-300">
+          ${(myUser ? myUser.name : 'Tú').substring(0, 2).toUpperCase()}
+        </div>
+        <div>
+          <div class="font-bold flex items-center space-x-1.5">
+            <span>${myUser ? myUser.name : 'Tú'} (Tú)</span>
+            ${isHost ? '<span class="px-1.5 py-0.2 rounded text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30">👑 Anfitrión</span>' : ''}
+            ${isSharingScreen ? '<i data-lucide="monitor" class="w-3 h-3 text-indigo-400"></i>' : ''}
+          </div>
+          <div class="text-[10px] text-slate-400 font-mono">ID: ${formatDeviceId(myDeviceId)}</div>
+        </div>
+      </div>
+      <div class="voice-eq flex items-center space-x-0.5 h-3.5 px-1 opacity-25">
+        <span class="w-1 bg-emerald-400 rounded-full eq-bar-1 h-2"></span>
+        <span class="w-1 bg-emerald-400 rounded-full eq-bar-2 h-3.5"></span>
+        <span class="w-1 bg-emerald-400 rounded-full eq-bar-3 h-1.5"></span>
+      </div>
+    `;
+    participantsListDrawer.appendChild(myItem);
+
+    // 2. Participantes Remotos
+    participants.forEach((user) => {
+      const item = document.createElement('div');
+      item.className = 'p-3 rounded-2xl glass-panel border border-slate-700/60 flex flex-col space-y-2 text-xs text-slate-200';
+      const hasControl = (authorizedControllerId === user.id);
+
+      item.innerHTML = `
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-2.5">
+            <div class="w-8 h-8 rounded-xl bg-emerald-600/30 border border-emerald-500/40 flex items-center justify-center font-bold text-xs text-emerald-300">
+              ${user.name.substring(0, 2).toUpperCase()}
+            </div>
+            <div>
+              <div class="font-bold flex items-center space-x-1.5 text-white">
+                <span>${escapeHtml(user.name)}</span>
+                ${user.isHost ? '<span class="px-1.5 py-0.2 rounded text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30">👑</span>' : ''}
+                ${user.isScreenSharing ? '<i data-lucide="monitor" class="w-3 h-3 text-indigo-400"></i>' : ''}
+              </div>
+              <div class="text-[10px] text-slate-400 font-mono">${user.deviceId ? 'ID: ' + formatDeviceId(user.deviceId) : 'Conectado'}</div>
+            </div>
+          </div>
+          <div class="flex items-center space-x-1.5">
+            <div class="voice-eq flex items-center space-x-0.5 h-3.5 px-1 opacity-25">
+              <span class="w-1 bg-emerald-400 rounded-full eq-bar-1 h-2"></span>
+              <span class="w-1 bg-emerald-400 rounded-full eq-bar-2 h-3.5"></span>
+              <span class="w-1 bg-emerald-400 rounded-full eq-bar-3 h-1.5"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Botones de Acción de Moderador -->
+        ${isHost ? `
+          <div class="pt-2 border-t border-slate-800 flex items-center justify-between gap-1.5">
+            <button class="btn-ctrl-user flex-1 py-1 px-2 rounded-xl text-[11px] font-semibold transition flex items-center justify-center space-x-1 ${
+              hasControl
+                ? 'bg-rose-600/20 text-rose-300 border border-rose-500/40 hover:bg-rose-600 hover:text-white'
+                : 'bg-emerald-600/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-600 hover:text-white'
+            }">
+              <i data-lucide="${hasControl ? 'x-circle' : 'gamepad-2'}" class="w-3 h-3"></i>
+              <span>${hasControl ? 'Quitar Control' : 'Ceder Control'}</span>
+            </button>
+            <button class="btn-mute-user p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-rose-400 transition" title="Silenciar a este usuario">
+              <i data-lucide="mic-off" class="w-3 h-3"></i>
+            </button>
+            <button class="btn-kick-user p-1.5 rounded-xl bg-slate-800 hover:bg-rose-950/60 text-slate-400 hover:text-rose-400 transition" title="Expulsar de la sala">
+              <i data-lucide="user-x" class="w-3 h-3"></i>
+            </button>
+          </div>
+        ` : ''}
+      `;
+
+      if (isHost) {
+        const btnCtrl = item.querySelector('.btn-ctrl-user');
+        if (btnCtrl) {
+          btnCtrl.addEventListener('click', () => {
+            if (hasControl) {
+              revokeAllMouseControl();
+            } else {
+              grantMouseControlTo(user.id);
+            }
+          });
+        }
+        const btnMute = item.querySelector('.btn-mute-user');
+        if (btnMute) {
+          btnMute.addEventListener('click', () => {
+            if (socket) socket.emit('mute-user', { targetUserId: user.id });
+            showToast('Silenciaste a ' + user.name, 'info');
+          });
+        }
+        const btnKick = item.querySelector('.btn-kick-user');
+        if (btnKick) {
+          btnKick.addEventListener('click', () => {
+            if (confirm('¿Expulsar a ' + user.name + ' de la sesión?')) {
+              if (socket) socket.emit('kick-user', { targetUserId: user.id });
+            }
+          });
+        }
+      }
+
+      participantsListDrawer.appendChild(item);
+    });
+
+    if (window.lucide) lucide.createIcons();
+  }

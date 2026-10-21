@@ -1,7 +1,8 @@
 # Conecty Windows Companion Agent
 Param(
   [string]$ServerUrl = "https://conecty.appzplay.online",
-  [string]$DeviceId = ""
+  [string]$DeviceId = "",
+  [string]$RoomId = ""
 )
 
 $Host.UI.RawUI.WindowTitle = "Conecty - Asistente de Control Remoto Windows"
@@ -11,14 +12,20 @@ Write-Host "============================================================" -Foreg
 Write-Host "  CONECTY - ASISTENTE DE CONTROL REMOTO (WINDOWS)" -ForegroundColor White
 Write-Host "============================================================" -ForegroundColor Cyan
 
-while (-not $DeviceId -or $DeviceId.Trim().Length -ne 9) {
-  Write-Host "Introduce tu numero Conecty de 9 digitos (ej. 486782545):" -ForegroundColor Yellow
-  $DeviceId = (Read-Host "ID Conecty").Trim()
-  $DeviceId = $DeviceId -replace '\D',''
+$cleanId = $DeviceId -replace '\D',''
+if (-not $cleanId -or $cleanId.Trim().Length -ne 9) {
+  while (-not $cleanId -or $cleanId.Trim().Length -ne 9) {
+    Write-Host "Introduce tu numero Conecty de 9 digitos (ej. 486782545):" -ForegroundColor Yellow
+    $DeviceId = (Read-Host "ID Conecty").Trim()
+    $cleanId = $DeviceId -replace '\D',''
+  }
 }
 
-$cleanId = $DeviceId -replace '\D',''
-$roomId = "device-$cleanId"
+if ($RoomId) {
+  $roomId = $RoomId
+} else {
+  $roomId = "device-$cleanId"
+}
 
 Write-Host "  Dispositivo Conecty : $cleanId" -ForegroundColor Yellow
 Write-Host "  Servidor           : $ServerUrl" -ForegroundColor Gray
@@ -74,7 +81,7 @@ $rec = $ws.ReceiveAsync($seg, [System.Threading.CancellationToken]::None)
 $rec.Wait()
 
 Write-Host "[2/3] Registrando permisos de control fisico para tu equipo..." -ForegroundColor Gray
-$regPayload = '42["register-device",{"deviceId":"' + $cleanId + '","userName":"Windows-Native-Agent","isAgent":true}]'
+$regPayload = '42["register-device",{"deviceId":"' + $cleanId + '","userName":"Windows-Native-Agent","isAgent":true,"roomId":"' + $roomId + '"}]'
 Send-WS $regPayload
 
 $joinPayload = '42["join-room",{"roomId":"' + $roomId + '","userName":"Windows-Native-Agent","deviceId":"' + $cleanId + '","isAgent":true}]'

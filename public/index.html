@@ -58,6 +58,13 @@
     .laser-ping {
       animation: ping-slow 1s cubic-bezier(0, 0, 0.2, 1) infinite;
     }
+    #screenVideo {
+      image-rendering: -webkit-optimize-contrast;
+      image-rendering: crisp-edges;
+    }
+    .rec-pulse {
+      animation: ping-slow 1.2s cubic-bezier(0, 0, 0.2, 1) infinite;
+    }
     /* Ecualizador animado de voz */
     @keyframes eq-wave {
       0%, 100% { height: 4px; }
@@ -189,6 +196,20 @@
 
       </div>
 
+      <!-- SECCIÓN DE HISTORIAL Y PUESTOS GUARDADOS (LIBRETA DE DIRECCIONES) -->
+      <div id="savedSessionsSection" class="w-full mt-6 glass-panel p-6 rounded-3xl border border-slate-800 shadow-xl hidden">
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center space-x-2">
+            <i data-lucide="bookmark" class="w-4 h-4 text-indigo-400"></i>
+            <h2 class="text-xs font-bold uppercase tracking-wider text-slate-300">Puestos Recientes y Guardados</h2>
+          </div>
+          <span id="savedSessionsCount" class="text-[11px] text-slate-500 font-mono">0 equipos</span>
+        </div>
+        <div id="savedSessionsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <!-- Inyectado dinámicamente -->
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -238,13 +259,30 @@
           <span class="hidden sm:inline">Invitar con Enlace</span>
         </button>
 
-        <!-- Contador de Participantes -->
-        <div class="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-300 flex items-center space-x-2">
+        <!-- Botón Grabar Sesión -->
+        <button id="btnRecordSession" class="px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 flex items-center space-x-1.5 transition shadow-sm" title="Grabar pantalla y audio de la sesión">
+          <span id="recDot" class="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+          <span id="recText" class="hidden sm:inline">Grabar</span>
+          <span id="recTimer" class="hidden text-rose-400 font-mono font-bold text-[11px] ml-1">00:00</span>
+        </button>
+
+        <!-- Botón Toggle Menú de Participantes -->
+        <button id="btnToggleParticipants" class="px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 flex items-center space-x-2 transition shadow-sm hover:border-indigo-500/50" title="Ver participantes y permisos de moderador">
           <i data-lucide="users" class="w-3.5 h-3.5 text-indigo-400"></i>
           <span id="participantsCount">1 participante</span>
-        </div>
+        </button>
       </div>
     </header>
+
+    <!-- BARRA DE PESTAÑAS CUANDO HAY MÚLTIPLES PANTALLAS COMPARTIDAS -->
+    <div id="multiScreenTabsBar" class="h-10 px-4 md:px-6 glass-panel border-b border-slate-800/80 flex items-center space-x-2 z-20 overflow-x-auto hidden">
+      <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider shrink-0 mr-1 flex items-center">
+        <i data-lucide="layers" class="w-3.5 h-3.5 mr-1 text-indigo-400"></i> Pantallas:
+      </span>
+      <div id="multiScreenTabs" class="flex items-center space-x-2">
+        <!-- Pestañas dinámicas de pantallas -->
+      </div>
+    </div>
 
     <!-- ÁREA DE CONTENIDO (VISOR DE PANTALLA & PARTICIPANTES) -->
     <main class="flex-1 flex overflow-hidden relative bg-slate-950">
@@ -424,12 +462,51 @@
           </div>
         </div>
 
-        <!-- Miniaturas / Grid de Audio y Avatares de Participantes -->
-        <div id="participantsBar" class="absolute bottom-4 left-4 z-20 flex items-center space-x-2 overflow-x-auto max-w-[calc(100%-2rem)]">
-          <!-- Tarjetas dinámicas de participantes -->
+        <!-- Miniaturas / Grid de Audio y Avatares de Participantes (Oculto por defecto para no tapar la pantalla) -->
+        <div id="participantsBar" class="hidden">
+          <!-- Tarjetas dinámicas -->
         </div>
 
       </div>
+
+      <!-- PANEL LATERAL DE PARTICIPANTES & MODERADOR (COLAPSIBLE) -->
+      <aside id="participantsSidebar" class="w-80 md:w-96 glass-panel border-l border-slate-800 flex flex-col z-30 transition-all duration-300 transform translate-x-full absolute right-0 inset-y-0 shadow-2xl">
+        <div class="h-16 px-5 border-b border-slate-800 flex items-center justify-between">
+          <div class="flex items-center space-x-2">
+            <i data-lucide="users" class="w-4 h-4 text-indigo-400"></i>
+            <h3 class="font-bold text-sm text-white">Participantes en Sesión</h3>
+          </div>
+          <button id="btnCloseParticipants" class="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <!-- Panel de Estado de Moderador para Control Remoto -->
+        <div id="moderatorControlBox" class="p-4 mx-4 mt-4 rounded-2xl bg-slate-900/90 border border-slate-800 text-xs text-left">
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center">
+              <i data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-400 mr-1"></i> Control de Moderador
+            </span>
+            <span id="activeControllerBadge" class="px-2 py-0.5 rounded-full text-[10px] bg-slate-800 text-slate-400 border border-slate-700">
+              Nadie tiene control
+            </span>
+          </div>
+          <p class="text-[11px] text-slate-400 leading-relaxed mb-2.5">
+            Tú decides quién puede mover el ratón. Pulsa <strong class="text-emerald-400 font-semibold">"Ceder Control"</strong> en el usuario que desees.
+          </p>
+          <div id="revokeControlContainer" class="hidden">
+            <button id="btnRevokeControlAll" class="w-full py-1.5 px-3 rounded-xl bg-rose-600/30 hover:bg-rose-600 text-rose-300 hover:text-white text-xs font-semibold border border-rose-500/40 flex items-center justify-center space-x-1.5 transition">
+              <i data-lucide="x-circle" class="w-3.5 h-3.5"></i>
+              <span>Quitar Control a Todos (Esc)</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Lista Vertical de Participantes -->
+        <div id="participantsListDrawer" class="flex-1 p-4 overflow-y-auto space-y-2.5 custom-scrollbar text-sm">
+          <!-- Inyectado dinámicamente -->
+        </div>
+      </aside>
 
       <!-- PANEL LATERAL DE CHAT (COLAPSIBLE) -->
       <aside id="chatSidebar" class="w-80 md:w-96 glass-panel border-l border-slate-800 flex flex-col z-20 transition-all duration-300 transform translate-x-full absolute right-0 inset-y-0 shadow-2xl">

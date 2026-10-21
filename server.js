@@ -49,6 +49,7 @@ app.get('/api/config', (req, res) => {
 // Descarga directa del componente PowerShell (.ps1)
 app.get('/api/download-agent-ps1', (req, res) => {
   const deviceId = (req.query.deviceId || '').replace(/\D/g, '');
+  const roomId = req.query.roomId || '';
   const serverHost = `${req.protocol}://${req.get('host')}`;
   const ps1Path = path.join(__dirname, 'agent', 'Conecty-Agent.ps1');
 
@@ -64,6 +65,9 @@ app.get('/api/download-agent-ps1', (req, res) => {
   if (deviceId) {
     content = content.replace('[string]$DeviceId = ""', `[string]$DeviceId = "${deviceId}"`);
   }
+  if (roomId) {
+    content = content.replace('[string]$RoomId = ""', `[string]$RoomId = "${roomId}"`);
+  }
 
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="Conecty-Agent-${deviceId || 'Windows'}.ps1"`);
@@ -73,6 +77,7 @@ app.get('/api/download-agent-ps1', (req, res) => {
 // Descarga del Asistente de Control Remoto de Windows (.bat)
 app.get('/api/download-agent', (req, res) => {
   const deviceId = (req.query.deviceId || '').replace(/\D/g, '');
+  const roomId = req.query.roomId || '';
   const serverHost = `${req.protocol}://${req.get('host')}`;
 
   const batContent = `@echo off
@@ -97,7 +102,7 @@ if %ERRORLEVEL% EQU 0 (
 )
 
 REM 2. Ejecutar mediante PowerShell nativo descargando el componente limpio
-set "PS1_URL=${serverHost}/api/download-agent-ps1?deviceId=${deviceId}"
+set "PS1_URL=${serverHost}/api/download-agent-ps1?deviceId=${deviceId}&roomId=${roomId}"
 set "TEMP_PS1=%TEMP%\\ConectyAgent-${deviceId || 'Run'}.ps1"
 
 echo Conectando al servicio de control...
@@ -123,6 +128,7 @@ exit /b %ERRORLEVEL%
 // Almacén de salas en memoria
 // roomId -> Map(socketId -> { id, name, isScreenSharing, isAudioMuted })
 const rooms = new Map();
+const roomAuthorizedControllers = new Map();
 
 // Almacén de dispositivos en línea: cleanDeviceId -> { socketId, deviceId, userName }
 const onlineDevices = new Map();
@@ -359,10 +365,18 @@ io.on('connection', (socket) => {
     };
 
     socket.join(roomId);
+    if (socket.deviceId && onlineDevices.has(socket.deviceId)) {
+      onlineDevices.get(socket.deviceId).currentRoom = roomId;
+    }
 
     if (!rooms.has(roomId)) {
       rooms.set(roomId, new Map());
     }
+
+    if (!roomHosts.has(roomId) && !currentUser.isAgent) {
+      roomHosts.set(roomId, socket.id);
+    }
+    currentUser.isHost = (roomHosts.get(roomId) === socket.id);
 
     const roomUsers = rooms.get(roomId);
 
@@ -370,7 +384,8 @@ io.on('connection', (socket) => {
     const existingUsers = Array.from(roomUsers.values());
     socket.emit('room-joined', {
       user: currentUser,
-      existingUsers
+      existingUsers,
+      hostId: roomHosts.get(roomId)
     });
 
     // Guardar usuario en la sala
@@ -430,9 +445,62 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Evento de Control Remoto de Ratón y Teclado (Respaldo por WebSocket)
+  // Moderador: Silenciar a todos los participantes excepto al host
+  socket.on('mute-all-users', () => {
+    if (currentRoom) {
+      socket.to(currentRoom).emit('force-mute');
+    }
+  });
+
+  // Moderador: Silenciar a un usuario específico
+  socket.on('mute-user', ({ targetUserId }) => {
+    if (currentRoom && targetUserId) {
+      io.to(targetUserId).emit('force-mute');
+    }
+  });
+
+  // Moderador: Expulsar a un usuario
+  socket.on('kick-user', ({ targetUserId }) => {
+    if (currentRoom && targetUserId) {
+      io.to(targetUserId).emit('kicked-from-room');
+    }
+  });
+
+  // Moderador otorga permiso de mover el ratón a un usuario específico
+  socket.on('grant-mouse-control', ({ targetUserId }) => {
+    if (currentRoom) {
+      roomAuthorizedControllers.set(currentRoom, targetUserId);
+      const roomUsers = rooms.get(currentRoom);
+      const targetUser = roomUsers ? roomUsers.get(targetUserId) : null;
+      io.to(currentRoom).emit('mouse-control-changed', {
+        authorizedUserId: targetUserId,
+        authorizedUserName: targetUser ? targetUser.name : 'Usuario',
+        granterId: socket.id
+      });
+    }
+  });
+
+  // Moderador revoca permiso de mover el ratón
+  socket.on('revoke-mouse-control', () => {
+    if (currentRoom) {
+      roomAuthorizedControllers.delete(currentRoom);
+      io.to(currentRoom).emit('mouse-control-changed', {
+        authorizedUserId: null,
+        authorizedUserName: null,
+        granterId: socket.id
+      });
+    }
+  });
+
+  // Evento de Control Remoto de Ratón y Teclado (con filtro estricto de moderador)
   socket.on('remote-control', (data) => {
     if (currentRoom) {
+      const authorizedUserId = roomAuthorizedControllers.get(currentRoom);
+      // Si el moderador ha otorgado control a alguien, SOLO ese usuario puede enviar eventos
+      if (authorizedUserId && socket.id !== authorizedUserId) {
+        return; // Rechazar intento de usuario no autorizado
+      }
+
       socket.to(currentRoom).emit('remote-control', {
         ...data,
         senderId: socket.id,
@@ -473,8 +541,26 @@ io.on('connection', (socket) => {
         isAgent: Boolean(currentUser ? currentUser.isAgent : socket.isAgent)
       });
 
+      if (roomAuthorizedControllers.get(currentRoom) === socket.id) {
+        roomAuthorizedControllers.delete(currentRoom);
+        socket.to(currentRoom).emit('mouse-control-changed', { authorizedUserId: null });
+      }
+      if (roomHosts.get(currentRoom) === socket.id) {
+        roomHosts.delete(currentRoom);
+        // Si hay otros usuarios, transferir moderador al siguiente usuario activo
+        if (roomUsers.size > 0) {
+          const nextHost = roomUsers.values().next().value;
+          if (nextHost) {
+            roomHosts.set(currentRoom, nextHost.id);
+            nextHost.isHost = true;
+            io.to(currentRoom).emit('host-changed', { newHostId: nextHost.id, newHostName: nextHost.name });
+          }
+        }
+      }
       if (roomUsers.size === 0) {
         rooms.delete(currentRoom);
+        roomAuthorizedControllers.delete(currentRoom);
+        roomHosts.delete(currentRoom);
       }
     }
     currentRoom = null;
