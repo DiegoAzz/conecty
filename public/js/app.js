@@ -817,15 +817,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   const copyAgentCommandHandler = () => {
-    const cmd = `irm ${window.location.origin}/api/download-agent?deviceId=${myDeviceId} | iex`;
+    const cmd = `node agent/conecty-agent.js ${window.location.origin} ${myDeviceId}`;
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(cmd).then(() => {
         showToast('📋 Comando copiado al portapapeles', 'success');
       }).catch(() => {
-        prompt('Copia este comando para PowerShell:', cmd);
+        prompt('Copia este comando:', cmd);
       });
     } else {
-      prompt('Copia este comando para PowerShell:', cmd);
+      prompt('Copia este comando:', cmd);
     }
   };
 
