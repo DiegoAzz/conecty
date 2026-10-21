@@ -97,6 +97,26 @@
         <p class="text-xs md:text-sm text-slate-400">Asistencia remota interactiva, control de teclado/ratón, llamadas de voz y pantalla en vivo.</p>
       </div>
 
+      <!-- Banner de Invitación Directa Detectada -->
+      <div id="inviteBanner" class="w-full mb-6 p-4 rounded-3xl glass-panel border border-emerald-500/40 bg-emerald-950/30 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl hidden">
+        <div class="flex items-center space-x-3 text-left">
+          <div class="w-10 h-10 rounded-2xl bg-emerald-600/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30">
+            <i data-lucide="link" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <div class="text-xs font-bold text-white flex items-center space-x-1.5">
+              <span>Invitación de Conexión Recibida</span>
+              <span class="px-2 py-0.5 rounded-full text-[10px] bg-emerald-500/20 text-emerald-300 font-mono font-bold" id="inviteTargetDisplay">--- --- ---</span>
+            </div>
+            <p class="text-[11px] text-slate-300">Te han invitado a conectarte directamente a este puesto de asistencia remota.</p>
+          </div>
+        </div>
+        <button id="btnAcceptInviteDirect" class="w-full sm:w-auto px-5 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white font-semibold text-xs transition shadow-lg shadow-emerald-600/30 flex items-center justify-center space-x-2 shrink-0">
+          <i data-lucide="zap" class="w-4 h-4"></i>
+          <span>Unirme a esta Sesión Ahora</span>
+        </button>
+      </div>
+
       <!-- Cuadrícula Doble Estilo AnyDesk -->
       <div class="w-full grid grid-cols-1 md:grid-cols-2 gap-6">
 
@@ -245,6 +265,12 @@
             <span class="w-1 bg-emerald-400 rounded-full eq-bar-3 h-2"></span>
           </div>
           <span>Voz: <strong id="voiceStatusText">Conectada</strong></span>
+        </div>
+
+        <!-- Indicador de Mano Levantada en el Header (Google Meet style) -->
+        <div id="headerHandNotice" class="hidden px-2.5 py-1 rounded-xl text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center space-x-1.5 animate-pulse">
+          <span class="text-sm">✋</span>
+          <span id="headerHandText" class="truncate max-w-[140px]">Alguien levantó la mano</span>
         </div>
 
         <!-- Botón Configuración (Header) -->
@@ -469,42 +495,57 @@
 
       </div>
 
-      <!-- PANEL LATERAL DE PARTICIPANTES & MODERADOR (COLAPSIBLE) -->
-      <aside id="participantsSidebar" class="w-80 md:w-96 glass-panel border-l border-slate-800 flex flex-col z-30 transition-all duration-300 transform translate-x-full absolute right-0 inset-y-0 shadow-2xl">
-        <div class="h-16 px-5 border-b border-slate-800 flex items-center justify-between">
+      <!-- PANEL LATERAL DE PARTICIPANTES & TILES (ESTILO GOOGLE MEET) -->
+      <aside id="participantsSidebar" class="w-64 md:w-72 lg:w-80 glass-panel border-l border-slate-800 flex flex-col z-20 shrink-0 transition-all duration-300 overflow-hidden">
+        <div class="h-14 px-4 border-b border-slate-800 flex items-center justify-between shrink-0">
           <div class="flex items-center space-x-2">
             <i data-lucide="users" class="w-4 h-4 text-indigo-400"></i>
-            <h3 class="font-bold text-sm text-white">Participantes en Sesión</h3>
+            <h3 class="font-bold text-xs md:text-sm text-white">Participantes</h3>
           </div>
-          <button id="btnCloseParticipants" class="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition">
+          <button id="btnCloseParticipants" class="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition" title="Ocultar barra lateral">
             <i data-lucide="x" class="w-4 h-4"></i>
           </button>
         </div>
 
-        <!-- Panel de Estado de Moderador para Control Remoto -->
-        <div id="moderatorControlBox" class="p-4 mx-4 mt-4 rounded-2xl bg-slate-900/90 border border-slate-800 text-xs text-left">
-          <div class="flex items-center justify-between mb-1.5">
+        <!-- Panel de Estado de Moderador para Control Remoto (Solo visible para Anfitrión) -->
+        <div id="moderatorControlBox" class="p-3 mx-3 mt-3 rounded-2xl bg-slate-900/90 border border-slate-800 text-xs text-left shrink-0">
+          <div class="flex items-center justify-between mb-1">
             <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center">
-              <i data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-400 mr-1"></i> Control de Moderador
+              <i data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-400 mr-1"></i> Moderador
             </span>
             <span id="activeControllerBadge" class="px-2 py-0.5 rounded-full text-[10px] bg-slate-800 text-slate-400 border border-slate-700">
               Nadie tiene control
             </span>
           </div>
-          <p class="text-[11px] text-slate-400 leading-relaxed mb-2.5">
-            Tú decides quién puede mover el ratón. Pulsa <strong class="text-emerald-400 font-semibold">"Ceder Control"</strong> en el usuario que desees.
+          <p class="text-[10px] text-slate-400 leading-tight mb-2">
+            Pasa el ratón sobre un usuario para <strong class="text-emerald-400 font-semibold">Ceder Control</strong>.
           </p>
           <div id="revokeControlContainer" class="hidden">
-            <button id="btnRevokeControlAll" class="w-full py-1.5 px-3 rounded-xl bg-rose-600/30 hover:bg-rose-600 text-rose-300 hover:text-white text-xs font-semibold border border-rose-500/40 flex items-center justify-center space-x-1.5 transition">
+            <button id="btnRevokeControlAll" class="w-full py-1.5 px-2.5 rounded-xl bg-rose-600/30 hover:bg-rose-600 text-rose-300 hover:text-white text-[11px] font-semibold border border-rose-500/40 flex items-center justify-center space-x-1.5 transition">
               <i data-lucide="x-circle" class="w-3.5 h-3.5"></i>
               <span>Quitar Control a Todos (Esc)</span>
             </button>
           </div>
         </div>
 
-        <!-- Lista Vertical de Participantes -->
-        <div id="participantsListDrawer" class="flex-1 p-4 overflow-y-auto space-y-2.5 custom-scrollbar text-sm">
-          <!-- Inyectado dinámicamente -->
+        <!-- Info para Participante Normal (no anfitrión) -->
+        <div id="participantGuestBox" class="p-3 mx-3 mt-3 rounded-2xl bg-slate-900/90 border border-slate-800 text-xs text-left shrink-0 hidden">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-indigo-400 flex items-center">
+              <i data-lucide="shield" class="w-3.5 h-3.5 text-indigo-400 mr-1"></i> Estado
+            </span>
+            <span id="guestControlBadge" class="px-2 py-0.5 rounded-full text-[10px] bg-slate-800 text-slate-400 border border-slate-700">
+              Espectador
+            </span>
+          </div>
+          <p id="guestControlText" class="text-[10px] text-slate-400 leading-tight">
+            El anfitrión administra los permisos de voz y control remoto.
+          </p>
+        </div>
+
+        <!-- Lista Vertical de Mosaicos de Participantes (Estilo Google Meet) -->
+        <div id="participantsListDrawer" class="flex-1 p-3 overflow-y-auto space-y-3 custom-scrollbar min-h-0">
+          <!-- Inyectado dinámicamente con aspect-[16/10] -->
         </div>
       </aside>
 
@@ -579,6 +620,12 @@
         <!-- Botón Limpiar Anotaciones -->
         <button id="btnClearCanvas" class="h-12 w-12 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center border border-slate-700 transition" title="Limpiar marcas y trazos">
           <i data-lucide="eraser" class="w-4 h-4"></i>
+        </button>
+
+        <!-- Botón Alzar / Bajar la Mano -->
+        <button id="btnToggleRaiseHand" class="h-12 px-3.5 md:px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs flex items-center space-x-2 border border-slate-700 transition" title="Alzar la mano para pedir la palabra">
+          <span id="handIcon" class="text-base select-none">✋</span>
+          <span id="handText" class="hidden sm:inline">Alzar Mano</span>
         </button>
       </div>
 

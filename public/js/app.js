@@ -31,6 +31,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const waitingHostNameText = document.getElementById('waitingHostNameText');
   const btnCancelWaitingApproval = document.getElementById('btnCancelWaitingApproval');
 
+  // Banner de Invitación Directa
+  const inviteBanner = document.getElementById('inviteBanner');
+  const inviteTargetDisplay = document.getElementById('inviteTargetDisplay');
+  const btnAcceptInviteDirect = document.getElementById('btnAcceptInviteDirect');
+
   // Modal de Configuraciones
   const settingsModal = document.getElementById('settingsModal');
   const btnOpenSettings = document.getElementById('btnOpenSettings');
@@ -107,6 +112,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const btnToggleLaser = document.getElementById('btnToggleLaser');
   const btnClearCanvas = document.getElementById('btnClearCanvas');
+  const btnToggleRaiseHand = document.getElementById('btnToggleRaiseHand');
+  const handIcon = document.getElementById('handIcon');
+  const handText = document.getElementById('handText');
 
   const btnToggleChat = document.getElementById('btnToggleChat');
   const btnCloseChat = document.getElementById('btnCloseChat');
@@ -504,11 +512,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   const urlParams = new URLSearchParams(window.location.search);
   const connectParam = urlParams.get('connect') || urlParams.get('id');
   const roomParam = urlParams.get('room');
-  if (connectParam) {
-    targetDeviceIdInput.value = formatDeviceId(connectParam);
-  } else if (roomParam) {
-    const cleanRoomNum = roomParam.replace(/^device-/, '');
-    targetDeviceIdInput.value = formatDeviceId(cleanRoomNum);
+  const targetToConnect = connectParam || (roomParam ? roomParam.replace(/^device-/, '') : null);
+  if (targetToConnect) {
+    const cleanTargetId = targetToConnect.replace(/\D/g, '');
+    if (cleanTargetId && cleanTargetId !== myDeviceId) {
+      targetDeviceIdInput.value = formatDeviceId(cleanTargetId);
+      if (inviteBanner && inviteTargetDisplay) {
+        inviteBanner.classList.remove('hidden');
+        inviteTargetDisplay.textContent = formatDeviceId(cleanTargetId);
+      }
+    }
+  }
+
+  if (btnAcceptInviteDirect) {
+    btnAcceptInviteDirect.addEventListener('click', () => {
+      connectRemoteForm.dispatchEvent(new Event('submit'));
+    });
   }
 
   // ================= 2. ESTADO LOCAL Y RECURSOS =================
@@ -564,6 +583,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     },
     message() {
       this.playTone(880, 'triangle', 0.1);
+    },
+    handRaised() {
+      this.playTone(659.25, 'sine', 0.1);
+      setTimeout(() => this.playTone(880, 'sine', 0.15), 100);
     },
     testChime() {
       this.playTone(523.25, 'sine', 0.2);
@@ -681,8 +704,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ================= 3. CONEXIÓN SOCKET Y REGISTRO EN LÍNEA =================
   const socket = io({
-    transports: ['websocket'],
-    upgrade: false
+    transports: ['websocket', 'polling'],
+    upgrade: true
   });
 
   function registerMyDeviceOnServer() {
@@ -892,18 +915,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       });
 
-      // Inicializar micrófono local
-      const audioStream = await webrtc.initLocalAudio();
-      if (audioStream) {
-        showToast('🎙️ Micrófono listo y llamada de voz activa', 'success');
-        monitorLocalVoice(audioStream);
-      } else {
-        showToast('⚠️ No se detectó micrófono. Podrás escuchar la llamada.', 'info');
-      }
-
       setupRoomSocketEvents();
     }
 
+    // Unirse a la sala de inmediato para evitar demoras
     socket.emit('join-room', {
       roomId,
       userName,
@@ -916,6 +931,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     soundEffects.join();
     showToast(`Conectado al puesto ${formatDeviceId(cleanRoomDisplay)}`, 'success');
     saveSessionToHistory(cleanRoomDisplay, 'Puesto-' + cleanRoomDisplay.substring(0, 4));
+    renderParticipantsDrawer();
+
+    // Inicializar micrófono local en segundo plano para no bloquear la conexión
+    if (webrtc && !webrtc.localAudioStream) {
+      webrtc.initLocalAudio().then((audioStream) => {
+        if (audioStream) {
+          showToast('🎙️ Micrófono listo y llamada de voz activa', 'success');
+          monitorLocalVoice(audioStream);
+        } else {
+          showToast('⚠️ No se detectó micrófono. Podrás escuchar la llamada.', 'info');
+        }
+      }).catch((e) => console.warn('Audio local no disponible:', e));
+    }
   }
 
   // ================= 6. MODO CONTROL REMOTO DE RATÓN Y TECLADO =================
@@ -1293,6 +1321,25 @@ document.addEventListener('DOMContentLoaded', async () => {
       renderParticipantsDrawer();
     });
 
+    socket.on('user-hand-updated', ({ userId, userName, isHandRaised, loweredByHost }) => {
+      const user = participants.get(userId);
+      if (user) {
+        user.isHandRaised = isHandRaised;
+      }
+      if (userId === socket.id) {
+        updateMyHandUI(isHandRaised);
+        if (loweredByHost) {
+          showToast('✋ El anfitrión bajó tu mano', 'info');
+        }
+      } else {
+        if (isHandRaised) {
+          soundEffects.handRaised();
+          showToast(`✋ ${userName} levantó la mano para hablar`, 'info');
+        }
+      }
+      renderParticipants();
+    });
+
     socket.on('user-connected', (user) => {
       if (user.isAgent || user.name === 'Windows-Native-Agent') {
         updateAgentStatusUI(true);
@@ -1575,6 +1622,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   function renderParticipants() {
     const totalCount = participants.size + 1;
     participantsCount.textContent = `${totalCount} en sesión`;
+    renderParticipantsDrawer();
 
     participantsBar.innerHTML = '';
 
@@ -2018,19 +2066,55 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
 
-  // ================= MODERACIÓN Y PANEL DE PARTICIPANTES =================
+  // ================= MODERACIÓN Y PANEL DE PARTICIPANTES (ESTILO GOOGLE MEET) =================
   let isHost = false;
   let authorizedControllerId = null;
+  let isMyHandRaised = false;
+
+  const headerHandNotice = document.getElementById('headerHandNotice');
+  const headerHandText = document.getElementById('headerHandText');
+
+  function updateMyHandUI(isRaised) {
+    isMyHandRaised = isRaised;
+    if (!btnToggleRaiseHand) return;
+    if (isRaised) {
+      btnToggleRaiseHand.className = 'h-12 px-3.5 md:px-4 rounded-2xl bg-amber-500/25 text-amber-300 border border-amber-500/50 shadow-lg shadow-amber-500/20 font-medium text-xs flex items-center space-x-2 transition animate-pulse';
+      if (handText) handText.textContent = 'Bajar Mano';
+    } else {
+      btnToggleRaiseHand.className = 'h-12 px-3.5 md:px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs flex items-center space-x-2 border border-slate-700 transition';
+      if (handText) handText.textContent = 'Alzar Mano';
+    }
+  }
+
+  if (btnToggleRaiseHand) {
+    btnToggleRaiseHand.addEventListener('click', () => {
+      const newState = !isMyHandRaised;
+      updateMyHandUI(newState);
+      if (socket) {
+        socket.emit('toggle-raise-hand', { isRaised: newState });
+      }
+      if (newState) {
+        soundEffects.handRaised();
+        showToast('✋ Has levantado la mano para pedir la palabra', 'info');
+      } else {
+        showToast('Mano bajada', 'info');
+      }
+      renderParticipants();
+    });
+  }
 
   function toggleParticipantsSidebar() {
     if (!participantsSidebar) return;
-    const isClosed = participantsSidebar.classList.contains('translate-x-full');
-    if (isClosed) {
-      participantsSidebar.classList.remove('translate-x-full');
+    const isHidden = participantsSidebar.classList.contains('hidden');
+    if (isHidden) {
+      participantsSidebar.classList.remove('hidden');
       renderParticipantsDrawer();
     } else {
-      participantsSidebar.classList.add('translate-x-full');
+      participantsSidebar.classList.add('hidden');
     }
+    setTimeout(() => {
+      if (laser) laser.resizeCanvas();
+    }, 250);
   }
 
   if (btnToggleParticipants) btnToggleParticipants.addEventListener('click', toggleParticipantsSidebar);
@@ -2072,7 +2156,57 @@ document.addEventListener('DOMContentLoaded', async () => {
     participantsListDrawer.innerHTML = '';
 
     const totalCount = participants.size + 1;
-    participantsCount.textContent = totalCount + (totalCount > 1 ? ' participantes' : ' participante');
+    if (participantsCount) {
+      participantsCount.textContent = `${totalCount} en sesión`;
+    }
+
+    // Indicador en el header si alguien levantó la mano
+    let handRaisedUser = null;
+    for (const u of participants.values()) {
+      if (u.isHandRaised) {
+        handRaisedUser = u;
+        break;
+      }
+    }
+    if (headerHandNotice) {
+      if (handRaisedUser) {
+        headerHandNotice.classList.remove('hidden');
+        if (headerHandText) headerHandText.textContent = `${handRaisedUser.name} quiere hablar`;
+      } else if (isMyHandRaised) {
+        headerHandNotice.classList.remove('hidden');
+        if (headerHandText) headerHandText.textContent = 'Tienes la mano alzada';
+      } else {
+        headerHandNotice.classList.add('hidden');
+      }
+    }
+
+    // Alternar cajas de moderador vs invitado
+    const modBox = document.getElementById('moderatorControlBox');
+    const guestBox = document.getElementById('participantGuestBox');
+    if (modBox && guestBox) {
+      if (isHost) {
+        modBox.classList.remove('hidden');
+        guestBox.classList.add('hidden');
+      } else {
+        modBox.classList.add('hidden');
+        guestBox.classList.remove('hidden');
+        const guestBadge = document.getElementById('guestControlBadge');
+        const guestText = document.getElementById('guestControlText');
+        if (authorizedControllerId === socket.id) {
+          if (guestBadge) {
+            guestBadge.textContent = '🎮 Control Activo';
+            guestBadge.className = 'px-2 py-0.5 rounded-full text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold';
+          }
+          if (guestText) guestText.textContent = '¡El anfitrión te ha otorgado el control interactivo del ratón y teclado!';
+        } else {
+          if (guestBadge) {
+            guestBadge.textContent = 'Modo Espectador';
+            guestBadge.className = 'px-2 py-0.5 rounded-full text-[10px] bg-slate-800 text-slate-400 border border-slate-700';
+          }
+          if (guestText) guestText.textContent = 'El anfitrión de la sala administra los permisos de voz y control de ratón/teclado.';
+        }
+      }
+    }
 
     // Estado del badge de control en el moderador
     if (activeControllerBadge) {
@@ -2089,112 +2223,190 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
 
-    // 1. Mi tarjeta en el Drawer
+    // 1. Mi Mosaico (Tile estilo Google Meet)
+    const myName = (myUser && myUser.name) ? myUser.name : (userNameInput ? userNameInput.value.trim() : 'Tú') || 'Tú';
+    const myInitials = myName.substring(0, 2).toUpperCase();
     const myItem = document.createElement('div');
-    myItem.className = 'p-3 rounded-2xl glass-panel border border-slate-700/60 flex items-center justify-between text-xs text-white';
+    myItem.className = 'relative rounded-2xl bg-slate-900/90 border border-indigo-500/30 shadow-lg overflow-hidden flex flex-col justify-between aspect-[16/10] p-2.5 transition-all group shrink-0';
     myItem.innerHTML = `
-      <div class="flex items-center space-x-2.5">
-        <div class="w-8 h-8 rounded-xl bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center font-bold text-xs text-indigo-300">
-          ${(myUser ? myUser.name : 'Tú').substring(0, 2).toUpperCase()}
-        </div>
-        <div>
-          <div class="font-bold flex items-center space-x-1.5">
-            <span>${myUser ? myUser.name : 'Tú'} (Tú)</span>
-            ${isHost ? '<span class="px-1.5 py-0.2 rounded text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30">👑 Anfitrión</span>' : ''}
-            ${isSharingScreen ? '<i data-lucide="monitor" class="w-3 h-3 text-indigo-400"></i>' : ''}
+      <!-- Fila Superior -->
+      <div class="flex items-center justify-between z-10">
+        ${isMyHandRaised ? `
+          <div class="px-2 py-0.5 rounded-lg bg-amber-500/30 text-amber-300 border border-amber-500/50 text-[10px] font-bold flex items-center space-x-1 shadow animate-pulse">
+            <span>✋</span>
+            <span>Mano alzada</span>
           </div>
-          <div class="text-[10px] text-slate-400 font-mono">ID: ${formatDeviceId(myDeviceId)}</div>
+        ` : '<div></div>'}
+
+        <div class="p-1 rounded-lg bg-slate-950/80 text-slate-400 border border-slate-800 text-xs flex items-center">
+          ${(webrtc && webrtc.isMicMuted)
+            ? '<i data-lucide="mic-off" class="w-3.5 h-3.5 text-rose-400"></i>'
+            : '<div class="voice-eq flex items-center space-x-0.5 h-3 px-0.5 opacity-40"><span class="w-0.5 bg-emerald-400 rounded-full h-2"></span><span class="w-0.5 bg-emerald-400 rounded-full h-3"></span><span class="w-0.5 bg-emerald-400 rounded-full h-1.5"></span></div>'
+          }
         </div>
       </div>
-      <div class="voice-eq flex items-center space-x-0.5 h-3.5 px-1 opacity-25">
-        <span class="w-1 bg-emerald-400 rounded-full eq-bar-1 h-2"></span>
-        <span class="w-1 bg-emerald-400 rounded-full eq-bar-2 h-3.5"></span>
-        <span class="w-1 bg-emerald-400 rounded-full eq-bar-3 h-1.5"></span>
+
+      <!-- Avatar / Inicial Grande al Centro -->
+      <div class="my-auto flex flex-col items-center justify-center">
+        <div class="w-12 h-12 rounded-full bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 flex items-center justify-center font-bold text-lg shadow-inner">
+          ${myInitials}
+        </div>
+      </div>
+
+      <!-- Pastilla Inferior con Nombre y Roles -->
+      <div class="flex items-center justify-between z-10 pt-1">
+        <div class="px-2 py-0.5 rounded-xl bg-slate-950/85 backdrop-blur-md text-[11px] font-semibold text-white flex items-center space-x-1 border border-slate-800/80 truncate max-w-[85%]">
+          <span class="truncate">${escapeHtml(myName)} (Tú)</span>
+          ${isHost ? '<span class="text-[9px] text-amber-400" title="Anfitrión">👑</span>' : ''}
+          ${isSharingScreen ? '<i data-lucide="monitor" class="w-3 h-3 text-indigo-400 shrink-0" title="Presentando pantalla"></i>' : ''}
+        </div>
       </div>
     `;
     participantsListDrawer.appendChild(myItem);
 
-    // 2. Participantes Remotos
-    participants.forEach((user) => {
-      const item = document.createElement('div');
-      item.className = 'p-3 rounded-2xl glass-panel border border-slate-700/60 flex flex-col space-y-2 text-xs text-slate-200';
-      const hasControl = (authorizedControllerId === user.id);
-
-      item.innerHTML = `
-        <div class="flex items-center justify-between">
-          <div class="flex items-center space-x-2.5">
-            <div class="w-8 h-8 rounded-xl bg-emerald-600/30 border border-emerald-500/40 flex items-center justify-center font-bold text-xs text-emerald-300">
-              ${user.name.substring(0, 2).toUpperCase()}
-            </div>
-            <div>
-              <div class="font-bold flex items-center space-x-1.5 text-white">
-                <span>${escapeHtml(user.name)}</span>
-                ${user.isHost ? '<span class="px-1.5 py-0.2 rounded text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30">👑</span>' : ''}
-                ${user.isScreenSharing ? '<i data-lucide="monitor" class="w-3 h-3 text-indigo-400"></i>' : ''}
-              </div>
-              <div class="text-[10px] text-slate-400 font-mono">${user.deviceId ? 'ID: ' + formatDeviceId(user.deviceId) : 'Conectado'}</div>
-            </div>
-          </div>
-          <div class="flex items-center space-x-1.5">
-            <div class="voice-eq flex items-center space-x-0.5 h-3.5 px-1 opacity-25">
-              <span class="w-1 bg-emerald-400 rounded-full eq-bar-1 h-2"></span>
-              <span class="w-1 bg-emerald-400 rounded-full eq-bar-2 h-3.5"></span>
-              <span class="w-1 bg-emerald-400 rounded-full eq-bar-3 h-1.5"></span>
-            </div>
-          </div>
+    // 2. Participantes Remotos (Mosaicos estilo Google Meet)
+    if (participants.size === 0) {
+      const emptyCard = document.createElement('div');
+      emptyCard.className = 'p-4 rounded-2xl bg-slate-900/60 border border-slate-800 text-center text-xs text-slate-400 space-y-2 mt-2';
+      emptyCard.innerHTML = `
+        <div class="w-10 h-10 mx-auto rounded-xl bg-slate-800 flex items-center justify-center text-indigo-400">
+          <i data-lucide="user-plus" class="w-5 h-5"></i>
         </div>
-
-        <!-- Botones de Acción de Moderador -->
-        ${isHost ? `
-          <div class="pt-2 border-t border-slate-800 flex items-center justify-between gap-1.5">
-            <button class="btn-ctrl-user flex-1 py-1 px-2 rounded-xl text-[11px] font-semibold transition flex items-center justify-center space-x-1 ${
-              hasControl
-                ? 'bg-rose-600/20 text-rose-300 border border-rose-500/40 hover:bg-rose-600 hover:text-white'
-                : 'bg-emerald-600/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-600 hover:text-white'
-            }">
-              <i data-lucide="${hasControl ? 'x-circle' : 'gamepad-2'}" class="w-3 h-3"></i>
-              <span>${hasControl ? 'Quitar Control' : 'Ceder Control'}</span>
-            </button>
-            <button class="btn-mute-user p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-rose-400 transition" title="Silenciar a este usuario">
-              <i data-lucide="mic-off" class="w-3 h-3"></i>
-            </button>
-            <button class="btn-kick-user p-1.5 rounded-xl bg-slate-800 hover:bg-rose-950/60 text-slate-400 hover:text-rose-400 transition" title="Expulsar de la sala">
-              <i data-lucide="user-x" class="w-3 h-3"></i>
-            </button>
-          </div>
-        ` : ''}
+        <div class="font-semibold text-slate-200">Solo tú estás en la sala</div>
+        <p class="text-[11px] text-slate-400 leading-relaxed">Pídele a la otra persona que abra el enlace de la sala para unirse contigo.</p>
+        <button class="btn-copy-drawer-link w-full py-2 px-3 rounded-xl bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white font-semibold transition border border-indigo-500/30 flex items-center justify-center space-x-1.5 text-xs">
+          <i data-lucide="link" class="w-3.5 h-3.5"></i>
+          <span>Copiar Enlace</span>
+        </button>
       `;
+      const btnCopy = emptyCard.querySelector('.btn-copy-drawer-link');
+      if (btnCopy) btnCopy.addEventListener('click', copyInviteLink);
+      participantsListDrawer.appendChild(emptyCard);
+    } else {
+      const avatarColors = [
+        'bg-amber-600/30 text-amber-300 border-amber-500/40',
+        'bg-emerald-600/30 text-emerald-300 border-emerald-500/40',
+        'bg-purple-600/30 text-purple-300 border-purple-500/40',
+        'bg-sky-600/30 text-sky-300 border-sky-500/40',
+        'bg-rose-600/30 text-rose-300 border-rose-500/40'
+      ];
 
-      if (isHost) {
-        const btnCtrl = item.querySelector('.btn-ctrl-user');
-        if (btnCtrl) {
-          btnCtrl.addEventListener('click', () => {
-            if (hasControl) {
-              revokeAllMouseControl();
-            } else {
-              grantMouseControlTo(user.id);
-            }
-          });
-        }
-        const btnMute = item.querySelector('.btn-mute-user');
-        if (btnMute) {
-          btnMute.addEventListener('click', () => {
-            if (socket) socket.emit('mute-user', { targetUserId: user.id });
-            showToast('Silenciaste a ' + user.name, 'info');
-          });
-        }
-        const btnKick = item.querySelector('.btn-kick-user');
-        if (btnKick) {
-          btnKick.addEventListener('click', () => {
-            if (confirm('¿Expulsar a ' + user.name + ' de la sesión?')) {
-              if (socket) socket.emit('kick-user', { targetUserId: user.id });
-            }
-          });
-        }
-      }
+      participants.forEach((user, idx) => {
+        const item = document.createElement('div');
+        item.className = 'relative rounded-2xl bg-slate-900/90 border border-slate-800 shadow-lg overflow-hidden flex flex-col justify-between aspect-[16/10] p-2.5 transition-all hover:border-slate-700 group shrink-0';
+        const hasControl = (authorizedControllerId === user.id);
+        const initials = (user.name || 'U').substring(0, 2).toUpperCase();
+        const colorClass = avatarColors[Math.abs(user.name.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % avatarColors.length];
 
-      participantsListDrawer.appendChild(item);
-    });
+        item.innerHTML = `
+          <!-- Fila Superior de Badges -->
+          <div class="flex items-center justify-between z-10">
+            <!-- Mano Levantada (Top-Left, estilo Google Meet) -->
+            ${user.isHandRaised ? `
+              <div class="px-2 py-0.5 rounded-lg bg-amber-500/30 text-amber-300 border border-amber-500/50 text-[10px] font-bold flex items-center space-x-1 shadow animate-bounce">
+                <span>✋</span>
+                <span>Quiere hablar</span>
+              </div>
+            ` : '<div></div>'}
+
+            <!-- Estado de Micrófono (Top-Right) -->
+            <div class="p-1 rounded-lg bg-slate-950/80 text-slate-400 border border-slate-800 text-xs flex items-center">
+              ${user.isAudioMuted 
+                ? '<i data-lucide="mic-off" class="w-3.5 h-3.5 text-rose-400"></i>' 
+                : '<div class="voice-eq flex items-center space-x-0.5 h-3 px-0.5 opacity-40"><span class="w-0.5 bg-emerald-400 rounded-full h-2"></span><span class="w-0.5 bg-emerald-400 rounded-full h-3"></span><span class="w-0.5 bg-emerald-400 rounded-full h-1.5"></span></div>'
+              }
+            </div>
+          </div>
+
+          <!-- Avatar / Inicial Grande al Centro -->
+          <div class="my-auto flex flex-col items-center justify-center">
+            <div class="w-12 h-12 rounded-full ${colorClass} border flex items-center justify-center font-bold text-lg shadow-inner">
+              ${initials}
+            </div>
+          </div>
+
+          <!-- Pastilla Inferior con Nombre y Roles -->
+          <div class="flex items-center justify-between z-10 pt-1">
+            <div class="px-2 py-0.5 rounded-xl bg-slate-950/85 backdrop-blur-md text-[11px] font-semibold text-white flex items-center space-x-1 border border-slate-800/80 truncate max-w-[85%]">
+              <span class="truncate">${escapeHtml(user.name)}</span>
+              ${user.isHost ? '<span class="text-[9px] text-amber-400" title="Anfitrión">👑</span>' : ''}
+              ${user.isScreenSharing ? '<i data-lucide="monitor" class="w-3 h-3 text-indigo-400 shrink-0" title="Presentando pantalla"></i>' : ''}
+              ${hasControl ? '<span class="text-[9px] text-emerald-400" title="Control de ratón asignado">🎮</span>' : ''}
+            </div>
+          </div>
+
+          <!-- Capa de Acciones de Moderador (Superpuesta en Hover para el Host) -->
+          ${isHost ? `
+            <div class="absolute inset-0 bg-slate-950/90 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-center items-center p-3 space-y-1.5 z-20">
+              <div class="text-[11px] font-bold text-white truncate max-w-full">${escapeHtml(user.name)}</div>
+              
+              <button class="btn-ctrl-user w-full py-1.5 px-2 rounded-xl text-[11px] font-semibold transition flex items-center justify-center space-x-1 shadow-sm ${
+                hasControl
+                  ? 'bg-rose-600 text-white hover:bg-rose-500 animate-pulse'
+                  : 'bg-emerald-600 text-white hover:bg-emerald-500'
+              }">
+                <i data-lucide="${hasControl ? 'x-circle' : 'gamepad-2'}" class="w-3.5 h-3.5"></i>
+                <span>${hasControl ? '🚫 Quitar Control' : '🎮 Ceder Control'}</span>
+              </button>
+
+              ${user.isHandRaised ? `
+                <button class="btn-lower-hand w-full py-1 px-2 rounded-xl text-[11px] font-semibold bg-amber-600 text-white hover:bg-amber-500 transition flex items-center justify-center space-x-1 shadow">
+                  <span>✋ Bajar Mano</span>
+                </button>
+              ` : ''}
+
+              <div class="flex items-center space-x-1 w-full pt-0.5">
+                <button class="btn-mute-user flex-1 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] transition flex items-center justify-center space-x-1">
+                  <i data-lucide="mic-off" class="w-3 h-3 text-rose-400"></i>
+                  <span>Silenciar</span>
+                </button>
+                <button class="btn-kick-user flex-1 py-1 rounded-xl bg-slate-800 hover:bg-rose-950 text-slate-300 hover:text-rose-400 text-[10px] transition flex items-center justify-center space-x-1">
+                  <i data-lucide="user-x" class="w-3 h-3 text-rose-400"></i>
+                  <span>Expulsar</span>
+                </button>
+              </div>
+            </div>
+          ` : ''}
+        `;
+
+        if (isHost) {
+          const btnCtrl = item.querySelector('.btn-ctrl-user');
+          if (btnCtrl) {
+            btnCtrl.addEventListener('click', () => {
+              if (hasControl) {
+                revokeAllMouseControl();
+              } else {
+                grantMouseControlTo(user.id);
+              }
+            });
+          }
+          const btnLower = item.querySelector('.btn-lower-hand');
+          if (btnLower) {
+            btnLower.addEventListener('click', () => {
+              if (socket) socket.emit('lower-user-hand', { targetUserId: user.id });
+              showToast('Bajaste la mano de ' + user.name, 'info');
+            });
+          }
+          const btnMute = item.querySelector('.btn-mute-user');
+          if (btnMute) {
+            btnMute.addEventListener('click', () => {
+              if (socket) socket.emit('mute-user', { targetUserId: user.id });
+              showToast('Silenciaste a ' + user.name, 'info');
+            });
+          }
+          const btnKick = item.querySelector('.btn-kick-user');
+          if (btnKick) {
+            btnKick.addEventListener('click', () => {
+              if (confirm('¿Expulsar a ' + user.name + ' de la sesión?')) {
+                if (socket) socket.emit('kick-user', { targetUserId: user.id });
+              }
+            });
+          }
+        }
+
+        participantsListDrawer.appendChild(item);
+      });
+    }
 
     if (window.lucide) lucide.createIcons();
   }

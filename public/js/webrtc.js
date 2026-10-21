@@ -168,22 +168,30 @@ class WebRTCManager {
    */
   async startScreenShare(onEnded) {
     try {
-      this.localScreenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          cursor: 'always',
-          displaySurface: 'monitor',
-          width: { ideal: 1920, max: 3840 },
-          height: { ideal: 1080, max: 2160 },
-          frameRate: { ideal: 60, max: 60 },
-          selfBrowserSurface: 'exclude', // Evita seleccionar accidentalmente la misma pestaña y previene el efecto espejo
-          surfaceSwitching: 'include'
-        },
-        audio: true
-      });
+      let stream = null;
+      try {
+        stream = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            cursor: 'always',
+            width: { ideal: 1920, max: 3840 },
+            height: { ideal: 1080, max: 2160 },
+            frameRate: { ideal: 60, max: 60 }
+          },
+          audio: true
+        });
+      } catch (errFallback) {
+        console.warn('Fallback a captura básica de pantalla:', errFallback);
+        stream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: false
+        });
+      }
+
+      this.localScreenStream = stream;
 
       const videoTrack = this.localScreenStream.getVideoTracks()[0];
       if (videoTrack && 'contentHint' in videoTrack) {
-        videoTrack.contentHint = 'motion'; // Prioriza baja latencia y fluidez
+        videoTrack.contentHint = 'motion'; // Prioriza fluidez y nitidez
       }
 
       videoTrack.onended = () => {
@@ -197,9 +205,13 @@ class WebRTCManager {
         this.localScreenStream.getTracks().forEach((track) => {
           const sender = pc.addTrack(track, this.localScreenStream);
           peerObj.screenSenders.push(sender);
+        });
+        // Re-negociar explícitamente para transmitir el nuevo video
+        await this.renegotiate(peerId);
 
-          // Configurar 8 Mbps para nitidez cristalina en documentos, código y texto
-          if (track.kind === 'video' && sender.setParameters) {
+        // Optimizar bitrate una vez negociado
+        peerObj.screenSenders.forEach((sender) => {
+          if (sender.track && sender.track.kind === 'video' && sender.setParameters) {
             try {
               const params = sender.getParameters();
               if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
@@ -210,8 +222,6 @@ class WebRTCManager {
             } catch (e) {}
           }
         });
-        // Re-negociar explícitamente para transmitir el nuevo video
-        await this.renegotiate(peerId);
       }
 
       return this.localScreenStream;
@@ -292,6 +302,10 @@ class WebRTCManager {
     }
 
     try {
+      if (offerCollision) {
+        // Rollback obligatorio en W3C Perfect Negotiation para el peer cortés
+        await pc.setLocalDescription({ type: 'rollback' });
+      }
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
       // Vaciar candidatos pendientes que llegaron antes de remoteDescription

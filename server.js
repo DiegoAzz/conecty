@@ -14,7 +14,8 @@ const io = new Server(server, {
     origin: '*',
     methods: ['GET', 'POST']
   },
-  transports: ['websocket'], // Ultra baja latencia sin HTTP polling
+  transports: ['websocket', 'polling'], // WebSocket primero, con fallback y upgrade transparente
+  allowUpgrades: true,
   perMessageDeflate: false,
   maxHttpBufferSize: 1e7
 });
@@ -129,6 +130,7 @@ exit /b %ERRORLEVEL%
 // roomId -> Map(socketId -> { id, name, isScreenSharing, isAudioMuted })
 const rooms = new Map();
 const roomAuthorizedControllers = new Map();
+const roomHosts = new Map();
 
 // Almacén de dispositivos en línea: cleanDeviceId -> { socketId, deviceId, userName }
 const onlineDevices = new Map();
@@ -361,7 +363,8 @@ io.on('connection', (socket) => {
       deviceId: deviceId || socket.deviceId || '',
       isAgent: Boolean(isAgent || socket.isAgent),
       isScreenSharing: false,
-      isAudioMuted: false
+      isAudioMuted: false,
+      isHandRaised: false
     };
 
     socket.join(roomId);
@@ -463,6 +466,39 @@ io.on('connection', (socket) => {
   socket.on('kick-user', ({ targetUserId }) => {
     if (currentRoom && targetUserId) {
       io.to(targetUserId).emit('kicked-from-room');
+    }
+  });
+
+  // Levantar / Bajar la Mano para pedir la palabra
+  socket.on('toggle-raise-hand', ({ isRaised }) => {
+    if (currentRoom && rooms.has(currentRoom)) {
+      const roomUsers = rooms.get(currentRoom);
+      const user = roomUsers.get(socket.id);
+      if (user) {
+        user.isHandRaised = Boolean(isRaised);
+      }
+      io.to(currentRoom).emit('user-hand-updated', {
+        userId: socket.id,
+        userName: currentUser ? currentUser.name : (socket.userName || 'Usuario'),
+        isHandRaised: Boolean(isRaised)
+      });
+    }
+  });
+
+  // Moderador: Bajar la mano de un usuario
+  socket.on('lower-user-hand', ({ targetUserId }) => {
+    if (currentRoom && roomHosts.get(currentRoom) === socket.id && rooms.has(currentRoom)) {
+      const roomUsers = rooms.get(currentRoom);
+      const targetUser = roomUsers.get(targetUserId);
+      if (targetUser) {
+        targetUser.isHandRaised = false;
+        io.to(currentRoom).emit('user-hand-updated', {
+          userId: targetUserId,
+          userName: targetUser.name,
+          isHandRaised: false,
+          loweredByHost: true
+        });
+      }
     }
   });
 
