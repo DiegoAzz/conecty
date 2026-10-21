@@ -1071,11 +1071,11 @@
   <!-- Contenedor de Audio Remoto (fuera de pantalla para evitar suspensión de audio en navegadores) -->
   <div id="remoteAudios" style="position: fixed; bottom: -9999px; left: -9999px; width: 1px; height: 1px; opacity: 0; pointer-events: none;"></div>
 
-  <!-- Scripts -->
+  <!-- Scripts con versionado para evitar caché obsoleto del navegador -->
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/js/laser.js"></script>
-  <script src="/js/webrtc.js"></script>
-  <script src="/js/app.js"></script>
+  <script src="/js/laser.js?v=2.0.1"></script>
+  <script src="/js/webrtc.js?v=2.0.1"></script>
+  <script src="/js/app.js?v=2.0.1"></script>
   <script>
     // Inicializar iconos de Lucide
     document.addEventListener("DOMContentLoaded", () => {
