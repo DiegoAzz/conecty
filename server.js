@@ -348,6 +348,22 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Evento de Control Remoto de Ratón y Teclado (Respaldo por WebSocket)
+  socket.on('remote-control', (data) => {
+    if (currentRoom) {
+      socket.to(currentRoom).emit('remote-control', {
+        ...data,
+        senderId: socket.id,
+        senderName: currentUser ? currentUser.name : (socket.userName || 'Operador')
+      });
+    }
+  });
+
+  // Medición de latencia (Ping / Pong)
+  socket.on('ping-check', (clientTimestamp) => {
+    socket.emit('pong-check', clientTimestamp);
+  });
+
   // Chat en tiempo real
   socket.on('send-message', ({ text }) => {
     if (currentRoom && text && text.trim()) {

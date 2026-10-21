@@ -2,7 +2,8 @@
  * Conecty - Aplicación Principal y Control de Estado UI
  * Modelo AnyDesk: ID Fijo de 9 dígitos por dispositivo, Anti-Modo Espejo,
  * Sistema de Autorización Previa de Conexiones Entrantes,
- * Controles de tamaño de pantalla, y visualización en tiempo real de llamadas de voz.
+ * Modo Control Remoto Interactivo de Ratón y Teclado,
+ * Panel de Configuraciones Completo y Live Voice Call Equalizer.
  */
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -30,6 +31,32 @@ document.addEventListener('DOMContentLoaded', async () => {
   const waitingHostNameText = document.getElementById('waitingHostNameText');
   const btnCancelWaitingApproval = document.getElementById('btnCancelWaitingApproval');
 
+  // Modal de Configuraciones
+  const settingsModal = document.getElementById('settingsModal');
+  const btnOpenSettings = document.getElementById('btnOpenSettings');
+  const btnOpenSettingsLobby = document.getElementById('btnOpenSettingsLobby');
+  const btnCloseSettings = document.getElementById('btnCloseSettings');
+  const btnSaveCloseSettings = document.getElementById('btnSaveCloseSettings');
+  const settingsSavedToast = document.getElementById('settingsSavedToast');
+  const btnCopyAgentCmd = document.getElementById('btnCopyAgentCmd');
+
+  // Controles de Configuración
+  const settingUserName = document.getElementById('settingUserName');
+  const settingDeviceId = document.getElementById('settingDeviceId');
+  const btnSettingRegenId = document.getElementById('btnSettingRegenId');
+  const settingSoundEffects = document.getElementById('settingSoundEffects');
+  const settingAllowControl = document.getElementById('settingAllowControl');
+  const settingRequireAuth = document.getElementById('settingRequireAuth');
+  const settingAllowLaser = document.getElementById('settingAllowLaser');
+  const settingScreenFps = document.getElementById('settingScreenFps');
+  const settingDefaultScale = document.getElementById('settingDefaultScale');
+  const settingAntiMirror = document.getElementById('settingAntiMirror');
+  const settingEchoCancellation = document.getElementById('settingEchoCancellation');
+  const settingNoiseSuppression = document.getElementById('settingNoiseSuppression');
+  const btnStartMicTest = document.getElementById('btnStartMicTest');
+  const micVolumeBar = document.getElementById('micVolumeBar');
+  const pingValueDisplay = document.getElementById('pingValueDisplay');
+
   // Elementos DOM de la Sala
   const roomView = document.getElementById('roomView');
   const headerRoomId = document.getElementById('headerRoomId');
@@ -40,6 +67,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const idleScreen = document.getElementById('idleScreen');
   const sharerActiveCard = document.getElementById('sharerActiveCard');
+  const toggleHostAllowControl = document.getElementById('toggleHostAllowControl');
   const btnStopShareCard = document.getElementById('btnStopShareCard');
   const btnTogglePipPreview = document.getElementById('btnTogglePipPreview');
   const pipPreviewContainer = document.getElementById('pipPreviewContainer');
@@ -52,6 +80,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const laserCanvas = document.getElementById('laserCanvas');
   const sharerNameText = document.getElementById('sharerNameText');
   const pointerModeIndicator = document.getElementById('pointerModeIndicator');
+  const remoteControlBanner = document.getElementById('remoteControlBanner');
 
   // Controles de Tamaño de Pantalla & Zoom
   const btnFitScreen = document.getElementById('btnFitScreen');
@@ -72,6 +101,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const screenText = document.getElementById('screenText');
   const btnStartShareIdle = document.getElementById('btnStartShareIdle');
 
+  const btnToggleControl = document.getElementById('btnToggleControl');
+  const controlIcon = document.getElementById('controlIcon');
+  const controlText = document.getElementById('controlText');
+
   const btnToggleLaser = document.getElementById('btnToggleLaser');
   const btnClearCanvas = document.getElementById('btnClearCanvas');
 
@@ -89,7 +122,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const remoteAudios = document.getElementById('remoteAudios');
   const toastContainer = document.getElementById('toastContainer');
 
-  // ================= 1. GESTIÓN DE ID FIJO DE DISPOSITIVO (ESTILO ANYDESK) =================
+  // ================= 1. GESTIÓN DE ID Y CONFIGURACIONES (ANYDESK STYLE) =================
   let myDeviceId = localStorage.getItem('conecty_device_id');
   if (!myDeviceId || myDeviceId.length !== 9 || !/^\d+$/.test(myDeviceId)) {
     myDeviceId = Math.floor(100000000 + Math.random() * 900000000).toString();
@@ -107,13 +140,194 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   myDeviceIdDisplay.textContent = formatDeviceId(myDeviceId);
 
-  // Recordar nombre del usuario en este navegador
+  // Configuraciones de Usuario Persistentes
+  const defaultSettings = {
+    allowControl: true,
+    requireAuth: true,
+    allowLaser: true,
+    soundEffects: true,
+    screenFps: '60',
+    defaultScale: 'contain',
+    antiMirror: true,
+    echoCancellation: true,
+    noiseSuppression: true
+  };
+
+  let userSettings = { ...defaultSettings };
+  try {
+    const saved = localStorage.getItem('conecty_settings');
+    if (saved) {
+      userSettings = { ...defaultSettings, ...JSON.parse(saved) };
+    }
+  } catch (e) {}
+
+  function saveSettings() {
+    localStorage.setItem('conecty_settings', JSON.stringify(userSettings));
+    if (settingsSavedToast) {
+      settingsSavedToast.classList.remove('opacity-0');
+      setTimeout(() => settingsSavedToast.classList.add('opacity-0'), 1500);
+    }
+  }
+
+  // Nombre de Usuario
   const savedUserName = localStorage.getItem('conecty_user_name');
   if (savedUserName) {
     userNameInput.value = savedUserName;
   } else {
     userNameInput.value = 'Usuario-' + myDeviceId.substring(0, 4);
   }
+
+  // Sincronizar campos del modal de configuración
+  function populateSettingsModal() {
+    settingUserName.value = userNameInput.value;
+    settingDeviceId.value = formatDeviceId(myDeviceId);
+    settingSoundEffects.checked = userSettings.soundEffects;
+    settingAllowControl.checked = userSettings.allowControl;
+    settingRequireAuth.checked = userSettings.requireAuth;
+    settingAllowLaser.checked = userSettings.allowLaser;
+    settingScreenFps.value = userSettings.screenFps;
+    settingDefaultScale.value = userSettings.defaultScale;
+    settingAntiMirror.checked = userSettings.antiMirror;
+    settingEchoCancellation.checked = userSettings.echoCancellation;
+    settingNoiseSuppression.checked = userSettings.noiseSuppression;
+
+    if (toggleHostAllowControl) {
+      toggleHostAllowControl.checked = userSettings.allowControl;
+    }
+  }
+
+  populateSettingsModal();
+
+  // Guardar cambios al interactuar en el modal de configuración
+  settingUserName.addEventListener('change', () => {
+    const val = settingUserName.value.trim();
+    if (val) {
+      userNameInput.value = val;
+      localStorage.setItem('conecty_user_name', val);
+      if (socket) socket.emit('update-device-name', { userName: val });
+      saveSettings();
+    }
+  });
+
+  settingSoundEffects.addEventListener('change', () => {
+    userSettings.soundEffects = settingSoundEffects.checked;
+    saveSettings();
+  });
+
+  settingAllowControl.addEventListener('change', () => {
+    userSettings.allowControl = settingAllowControl.checked;
+    if (toggleHostAllowControl) toggleHostAllowControl.checked = userSettings.allowControl;
+    saveSettings();
+  });
+
+  if (toggleHostAllowControl) {
+    toggleHostAllowControl.addEventListener('change', () => {
+      userSettings.allowControl = toggleHostAllowControl.checked;
+      settingAllowControl.checked = toggleHostAllowControl.checked;
+      saveSettings();
+      showToast(userSettings.allowControl ? '🎮 Control remoto habilitado' : '🔒 Control remoto deshabilitado', 'info');
+    });
+  }
+
+  settingRequireAuth.addEventListener('change', () => {
+    userSettings.requireAuth = settingRequireAuth.checked;
+    saveSettings();
+  });
+
+  settingAllowLaser.addEventListener('change', () => {
+    userSettings.allowLaser = settingAllowLaser.checked;
+    saveSettings();
+  });
+
+  settingScreenFps.addEventListener('change', () => {
+    userSettings.screenFps = settingScreenFps.value;
+    saveSettings();
+  });
+
+  settingDefaultScale.addEventListener('change', () => {
+    userSettings.defaultScale = settingDefaultScale.value;
+    currentFitMode = userSettings.defaultScale;
+    updateScreenDisplay();
+    saveSettings();
+  });
+
+  settingAntiMirror.addEventListener('change', () => {
+    userSettings.antiMirror = settingAntiMirror.checked;
+    saveSettings();
+  });
+
+  settingEchoCancellation.addEventListener('change', () => {
+    userSettings.echoCancellation = settingEchoCancellation.checked;
+    saveSettings();
+  });
+
+  settingNoiseSuppression.addEventListener('change', () => {
+    userSettings.noiseSuppression = settingNoiseSuppression.checked;
+    saveSettings();
+  });
+
+  btnSettingRegenId.addEventListener('click', () => {
+    if (confirm('¿Deseas generar un nuevo ID permanente de 9 dígitos para este dispositivo?')) {
+      myDeviceId = Math.floor(100000000 + Math.random() * 900000000).toString();
+      localStorage.setItem('conecty_device_id', myDeviceId);
+      myDeviceIdDisplay.textContent = formatDeviceId(myDeviceId);
+      settingDeviceId.value = formatDeviceId(myDeviceId);
+      registerMyDeviceOnServer();
+      showToast('Nuevo ID de dispositivo generado: ' + formatDeviceId(myDeviceId), 'success');
+    }
+  });
+
+  btnCopyAgentCmd.addEventListener('click', () => {
+    navigator.clipboard.writeText(`node agent/conecty-agent.js ${window.location.origin} ${myDeviceId}`).then(() => {
+      showToast('📋 Comando del Asistente Windows copiado al portapapeles', 'success');
+    });
+  });
+
+  // Navegación de pestañas en el Modal de Configuración
+  const tabButtons = document.querySelectorAll('.settings-tab-btn');
+  const tabPanes = {
+    general: document.getElementById('tabGeneral'),
+    security: document.getElementById('tabSecurity'),
+    screen: document.getElementById('tabScreen'),
+    audio: document.getElementById('tabAudio'),
+    network: document.getElementById('tabNetwork')
+  };
+
+  tabButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tabName = btn.getAttribute('data-tab');
+      tabButtons.forEach((b) => {
+        b.className = 'settings-tab-btn w-full px-3 py-2.5 rounded-xl text-xs font-semibold flex items-center space-x-2.5 transition text-slate-400 hover:text-white hover:bg-slate-800/60';
+      });
+      btn.className = 'settings-tab-btn w-full px-3 py-2.5 rounded-xl text-xs font-semibold flex items-center space-x-2.5 transition text-white bg-indigo-600 shadow';
+
+      Object.values(tabPanes).forEach((pane) => {
+        if (pane) pane.classList.add('hidden');
+      });
+      if (tabPanes[tabName]) {
+        tabPanes[tabName].classList.remove('hidden');
+      }
+
+      if (window.lucide) lucide.createIcons();
+    });
+  });
+
+  // Abrir / Cerrar Configuración
+  function openSettings() {
+    populateSettingsModal();
+    settingsModal.classList.remove('hidden');
+    if (window.lucide) lucide.createIcons();
+  }
+
+  function closeSettings() {
+    settingsModal.classList.add('hidden');
+    stopMicMeter();
+  }
+
+  btnOpenSettings.addEventListener('click', openSettings);
+  btnOpenSettingsLobby.addEventListener('click', openSettings);
+  btnCloseSettings.addEventListener('click', closeSettings);
+  btnSaveCloseSettings.addEventListener('click', closeSettings);
 
   // Formateo automático al escribir en el campo de destino (XXX XXX XXX)
   targetDeviceIdInput.addEventListener('input', (e) => {
@@ -162,6 +376,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   let unreadChatCount = 0;
   let isChatOpen = false;
 
+  // Estado de Control Remoto de Ratón y Teclado
+  let isRemoteControlActive = false;
+
   // Participantes: Map(id -> { name, deviceId, isScreenSharing, isAudioMuted, isSpeaking: false })
   const participants = new Map();
 
@@ -178,6 +395,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     },
     playTone(freq, type = 'sine', duration = 0.15) {
+      if (!userSettings.soundEffects) return;
       try {
         this.init();
         const osc = this.ctx.createOscillator();
@@ -204,13 +422,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       this.playTone(880, 'triangle', 0.1);
     },
     testChime() {
-      // Secuencia armónica Do-Mi-Sol para probar altavoces
       this.playTone(523.25, 'sine', 0.2);
       setTimeout(() => this.playTone(659.25, 'sine', 0.2), 150);
       setTimeout(() => this.playTone(783.99, 'sine', 0.35), 300);
     },
     playIncomingChime() {
-      // Tono de llamada entrante suave y agradable (AnyDesk style)
       this.playTone(523.25, 'sine', 0.2);
       setTimeout(() => this.playTone(659.25, 'sine', 0.3), 220);
     },
@@ -232,6 +448,58 @@ document.addEventListener('DOMContentLoaded', async () => {
   btnTestAudio.addEventListener('click', () => {
     soundEffects.testChime();
     showToast('🔊 Sonido de prueba reproducido. Si lo escuchas, tus altavoces funcionan.', 'info');
+  });
+
+  // Medidor interactivo del micrófono en Configuración
+  let micMeterStream = null;
+  let micMeterInterval = null;
+  async function startMicMeter() {
+    stopMicMeter();
+    try {
+      micMeterStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioCtx.createMediaStreamSource(micMeterStream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 64;
+      source.connect(analyser);
+      const data = new Uint8Array(analyser.frequencyBinCount);
+
+      const updateMeter = () => {
+        analyser.getByteFrequencyData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) sum += data[i];
+        const pct = Math.min(100, Math.round((sum / data.length) * 2));
+        if (micVolumeBar) {
+          micVolumeBar.style.width = pct + '%';
+        }
+        micMeterInterval = requestAnimationFrame(updateMeter);
+      };
+      updateMeter();
+      btnStartMicTest.textContent = 'Detener Prueba';
+    } catch (e) {
+      showToast('No se pudo acceder al micrófono para la prueba', 'info');
+    }
+  }
+
+  function stopMicMeter() {
+    if (micMeterInterval) {
+      cancelAnimationFrame(micMeterInterval);
+      micMeterInterval = null;
+    }
+    if (micMeterStream) {
+      micMeterStream.getTracks().forEach((t) => t.stop());
+      micMeterStream = null;
+    }
+    if (micVolumeBar) micVolumeBar.style.width = '0%';
+    if (btnStartMicTest) btnStartMicTest.textContent = 'Probar Entrada';
+  }
+
+  btnStartMicTest.addEventListener('click', () => {
+    if (micMeterStream) {
+      stopMicMeter();
+    } else {
+      startMicMeter();
+    }
   });
 
   // Toast Notification
@@ -283,6 +551,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   socket.on('connect', () => {
     registerMyDeviceOnServer();
+    measureLatency();
   });
 
   userNameInput.addEventListener('input', () => {
@@ -292,6 +561,23 @@ document.addEventListener('DOMContentLoaded', async () => {
       socket.emit('update-device-name', { userName: newName });
     }
   });
+
+  // Medición continua de latencia Ping (ms)
+  function measureLatency() {
+    const start = Date.now();
+    socket.emit('ping-check', start);
+  }
+
+  socket.on('pong-check', (clientTimestamp) => {
+    const latency = Date.now() - clientTimestamp;
+    if (pingValueDisplay) {
+      pingValueDisplay.textContent = latency;
+    }
+  });
+
+  setInterval(() => {
+    if (socket.connected) measureLatency();
+  }, 4000);
 
   // ================= 4. FLUJO DE AUTORIZACIÓN DE CONEXIONES =================
   let currentIncomingRequestId = null;
@@ -310,7 +596,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (window.lucide) lucide.createIcons();
   });
 
-  // El solicitante canceló la petición antes de que respondiéramos
   socket.on('incoming-request-cancelled', ({ requestId }) => {
     if (currentIncomingRequestId === requestId) {
       currentIncomingRequestId = null;
@@ -330,7 +615,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     socket.emit('respond-connection-request', { requestId: reqId, accepted: true });
 
-    // Si el anfitrión todavía estaba en el lobby, ingresar a la sala
     if (!currentRoomId) {
       const name = userNameInput.value.trim() || ('Usuario-' + myDeviceId.substring(0, 4));
       await startSession(name, 'device-' + myDeviceId);
@@ -367,25 +651,21 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    // Mostrar modal de espera
     waitingTargetIdDisplay.textContent = formatDeviceId(targetRaw);
     waitingHostNameText.textContent = 'el anfitrión';
     waitingApprovalModal.classList.remove('hidden');
 
-    // Emitir solicitud al servidor
     socket.emit('request-connection', {
       targetDeviceId: targetRaw,
       requesterName: name
     });
   });
 
-  // Confirmación de solicitud enviada
-  socket.on('connection-request-sent', ({ requestId, hostName, targetDeviceId }) => {
+  socket.on('connection-request-sent', ({ requestId, hostName }) => {
     currentOutgoingRequestId = requestId;
     waitingHostNameText.textContent = hostName || 'el anfitrión';
   });
 
-  // Respuesta a la solicitud del invitado
   socket.on('connection-response', async (res) => {
     waitingApprovalModal.classList.add('hidden');
     currentOutgoingRequestId = null;
@@ -405,7 +685,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Botón Invitado: Cancelar espera de autorización
   btnCancelWaitingApproval.addEventListener('click', () => {
     if (currentOutgoingRequestId) {
       socket.emit('cancel-connection-request', { requestId: currentOutgoingRequestId });
@@ -415,7 +694,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     showToast('Solicitud de conexión cancelada', 'info');
   });
 
-  // C) ABRIR Y ESPERAR CONEXIÓN (ANFITRIÓN)
   btnWaitConnection.addEventListener('click', async () => {
     const name = userNameInput.value.trim() || ('Usuario-' + myDeviceId.substring(0, 4));
     localStorage.setItem('conecty_user_name', name);
@@ -431,7 +709,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const newUrl = `${window.location.origin}/?connect=${cleanRoomDisplay}`;
     window.history.pushState({ path: newUrl }, '', newUrl);
 
-    // Controlador Láser
+    // Controlador Láser y Emulación de Ratón
     if (!laser) {
       laser = new LaserController(laserCanvas, screenVideo, (pointerData) => {
         const sentP2P = webrtc ? webrtc.broadcastData({ type: 'laser', ...pointerData }) : false;
@@ -464,6 +742,8 @@ document.addEventListener('DOMContentLoaded', async () => {
               senderId: peerId,
               senderName: user ? user.name : 'Operador'
             });
+          } else if (data.type === 'remote-control') {
+            handleIncomingRemoteControl(data, peerId);
           }
         }
       });
@@ -492,6 +772,121 @@ document.addEventListener('DOMContentLoaded', async () => {
     soundEffects.join();
     showToast(`Conectado al puesto ${formatDeviceId(cleanRoomDisplay)}`, 'success');
   }
+
+  // ================= 6. MODO CONTROL REMOTO DE RATÓN Y TECLADO =================
+  function sendRemoteControlEvent(actionData) {
+    if (!isRemoteControlActive) return;
+    const payload = {
+      type: 'remote-control',
+      ...actionData
+    };
+    const sentP2P = webrtc ? webrtc.broadcastData(payload) : false;
+    if (!sentP2P && socket) {
+      socket.emit('remote-control', payload);
+    }
+  }
+
+  function handleIncomingRemoteControl(data, senderId) {
+    // Si el anfitrión no permite el control remoto, ignorar
+    if (!userSettings.allowControl || (toggleHostAllowControl && !toggleHostAllowControl.checked)) {
+      return;
+    }
+
+    const user = participants.get(senderId || data.senderId);
+    if (laser) {
+      laser.handleRemoteControl({
+        ...data,
+        senderId: senderId || data.senderId,
+        senderName: user ? user.name : (data.senderName || 'Operador')
+      });
+    }
+  }
+
+  // Toggle del botón de Control Remoto en el Dock
+  btnToggleControl.addEventListener('click', () => {
+    isRemoteControlActive = !isRemoteControlActive;
+
+    if (isRemoteControlActive) {
+      btnToggleControl.classList.remove('bg-slate-800', 'text-slate-200');
+      btnToggleControl.classList.add('bg-emerald-600', 'text-white', 'border-emerald-500/80');
+      controlIcon.className = 'w-4 h-4 text-white animate-pulse';
+      remoteControlBanner.classList.remove('hidden');
+      laserCanvas.style.cursor = 'default';
+      showToast('🎮 Modo Control Remoto Activado (Mueve el ratón y haz clic sobre la pantalla)', 'success');
+    } else {
+      btnToggleControl.classList.add('bg-slate-800', 'text-slate-200');
+      btnToggleControl.classList.remove('bg-emerald-600', 'text-white', 'border-emerald-500/80');
+      controlIcon.className = 'w-4 h-4 text-slate-400';
+      remoteControlBanner.classList.add('hidden');
+      laserCanvas.style.cursor = 'crosshair';
+      showToast('Control remoto desactivado', 'info');
+    }
+  });
+
+  // Captura de eventos de ratón para Control Remoto sobre el canvas
+  laserCanvas.addEventListener('mousemove', (e) => {
+    if (!isRemoteControlActive || !laser) return;
+    const coords = laser.normalizeCoords(e.clientX, e.clientY);
+    if (coords.inside) {
+      sendRemoteControlEvent({ type: 'move', x: coords.x, y: coords.y });
+    }
+  });
+
+  laserCanvas.addEventListener('mousedown', (e) => {
+    if (!isRemoteControlActive || !laser) return;
+    const coords = laser.normalizeCoords(e.clientX, e.clientY);
+    if (coords.inside) {
+      sendRemoteControlEvent({ type: 'mousedown', button: e.button, x: coords.x, y: coords.y });
+    }
+  });
+
+  laserCanvas.addEventListener('mouseup', (e) => {
+    if (!isRemoteControlActive || !laser) return;
+    const coords = laser.normalizeCoords(e.clientX, e.clientY);
+    if (coords.inside) {
+      sendRemoteControlEvent({ type: 'mouseup', button: e.button, x: coords.x, y: coords.y });
+      sendRemoteControlEvent({ type: 'click', button: e.button, x: coords.x, y: coords.y });
+    }
+  });
+
+  laserCanvas.addEventListener('dblclick', (e) => {
+    if (!isRemoteControlActive || !laser) return;
+    const coords = laser.normalizeCoords(e.clientX, e.clientY);
+    if (coords.inside) {
+      sendRemoteControlEvent({ type: 'dblclick', button: e.button, x: coords.x, y: coords.y });
+    }
+  });
+
+  laserCanvas.addEventListener('contextmenu', (e) => {
+    if (!isRemoteControlActive || !laser) return;
+    e.preventDefault(); // Prevenir menú contextual del navegador
+    const coords = laser.normalizeCoords(e.clientX, e.clientY);
+    if (coords.inside) {
+      sendRemoteControlEvent({ type: 'contextmenu', button: 2, x: coords.x, y: coords.y });
+    }
+  });
+
+  laserCanvas.addEventListener('wheel', (e) => {
+    if (!isRemoteControlActive || !laser) return;
+    e.preventDefault();
+    sendRemoteControlEvent({ type: 'wheel', deltaX: e.deltaX, deltaY: e.deltaY });
+  }, { passive: false });
+
+  // Captura de teclas cuando se está en control remoto
+  window.addEventListener('keydown', (e) => {
+    if (!isRemoteControlActive) return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+    sendRemoteControlEvent({
+      type: 'keydown',
+      key: e.key,
+      code: e.code,
+      ctrl: e.ctrlKey,
+      alt: e.altKey,
+      shift: e.shiftKey,
+      meta: e.metaKey
+    });
+  });
 
   // Monitor del micrófono local para ecualizador
   function monitorLocalVoice(stream) {
@@ -616,7 +1011,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     socket.on('laser-pointer', (data) => {
-      if (laser) laser.handleRemotePointer(data);
+      if (laser && userSettings.allowLaser) {
+        laser.handleRemotePointer(data);
+      }
+    });
+
+    socket.on('remote-control', (data) => {
+      handleIncomingRemoteControl(data, data.senderId);
     });
 
     socket.on('user-screen-updated', ({ userId, isSharing }) => {
@@ -672,9 +1073,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     monitorRemoteVoice(peerId, stream);
   }
 
-  // ================= 6. CONTROLES DE PANTALLA & MODO ANTI-ESPEJO =================
+  // ================= 7. CONTROLES DE PANTALLA & MODO ANTI-ESPEJO =================
   let currentZoom = 1.0;
-  let currentFitMode = 'contain';
+  let currentFitMode = userSettings.defaultScale || 'contain';
 
   function updateScreenDisplay() {
     if (zoomContainer) {
@@ -787,7 +1188,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     videoWrapper.classList.remove('hidden');
 
     currentZoom = 1.0;
-    currentFitMode = 'contain';
+    currentFitMode = userSettings.defaultScale || 'contain';
     updateScreenDisplay();
 
     if (laser) {
@@ -812,8 +1213,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (laser) laser.clearCanvas();
 
       if (isSharingScreen) {
-        sharerActiveCard.classList.remove('hidden');
-        idleScreen.classList.add('hidden');
+        if (userSettings.antiMirror) {
+          sharerActiveCard.classList.remove('hidden');
+          idleScreen.classList.add('hidden');
+        } else {
+          sharerActiveCard.classList.add('hidden');
+          idleScreen.classList.add('hidden');
+          videoWrapper.classList.remove('hidden');
+        }
       } else {
         sharerActiveCard.classList.add('hidden');
         idleScreen.classList.remove('hidden');
@@ -835,7 +1242,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     checkScreenSharingState();
   }
 
-  // ================= 7. TARJETAS DE LLAMADA DE VOZ Y PARTICIPANTES =================
+  // ================= 8. TARJETAS DE LLAMADA DE VOZ Y PARTICIPANTES =================
   function renderParticipants() {
     const totalCount = participants.size + 1;
     participantsCount.textContent = `${totalCount} en sesión`;
@@ -895,7 +1302,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (window.lucide) lucide.createIcons();
   }
 
-  // Compartir Pantalla con Protección Anti-Espejo
+  // Compartir Pantalla con Ajustes de FPS y Anti-Espejo
   async function toggleScreenShare() {
     if (!webrtc) return;
 
@@ -916,6 +1323,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       checkScreenSharingState();
       showToast('Dejaste de compartir pantalla', 'info');
     } else {
+      const targetFps = parseInt(userSettings.screenFps, 10) || 60;
       const stream = await webrtc.startScreenShare(async () => {
         isSharingScreen = false;
         screenText.textContent = 'Compartir Pantalla';
@@ -930,7 +1338,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         socket.emit('screen-share-status', { isSharing: false });
         checkScreenSharingState();
-      });
+      }, targetFps);
 
       if (stream) {
         isSharingScreen = true;
@@ -938,13 +1346,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         btnToggleScreen.classList.remove('bg-indigo-600', 'hover:bg-indigo-500');
         btnToggleScreen.classList.add('bg-rose-600', 'hover:bg-rose-500');
 
-        // MODO ANTI-ESPEJO ACTIVO:
-        idleScreen.classList.add('hidden');
-        videoWrapper.classList.add('hidden');
-        sharerActiveCard.classList.remove('hidden');
+        if (userSettings.antiMirror) {
+          idleScreen.classList.add('hidden');
+          videoWrapper.classList.add('hidden');
+          sharerActiveCard.classList.remove('hidden');
+        }
 
         socket.emit('screen-share-status', { isSharing: true });
-        showToast('Transmitiendo en vivo (Modo Anti-Espejo activo)', 'success');
+        showToast('Transmitiendo en vivo' + (userSettings.antiMirror ? ' (Modo Anti-Espejo activo)' : ''), 'success');
       }
     }
     renderParticipants();

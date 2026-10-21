@@ -1,7 +1,7 @@
 /**
- * Módulo de Puntero Láser y Anotaciones Interactivas en Tiempo Real
- * Maneja coordenadas normalizadas (0.0 a 1.0) para que coincida exactamente
- * con el contenido del video independientemente de la resolución o escala.
+ * Módulo de Puntero Láser, Anotaciones y Emulación de Control Remoto en Tiempo Real
+ * Maneja coordenadas normalizadas (0.0 a 1.0) con cálculo geométrico exacto
+ * que compensa aspect ratio, letterboxing y resolución tanto en emisor como receptor.
  */
 
 class LaserController {
@@ -15,11 +15,14 @@ class LaserController {
     this.isDrawing = false;
     this.lastPosition = null;
 
-    // Almacén de punteros remotos: { [senderId]: { x, y, name, color, lastUpdated } }
+    // Almacén de punteros remotos (modo láser): { [senderId]: { x, y, name, color, lastUpdated } }
     this.remotePointers = new Map();
-    // Ondas expansivas de clics: [ { x, y, radius, maxRadius, alpha, color } ]
+    // Almacén de cursores de control remoto: { [senderId]: { x, y, name, color, lastUpdated, isClicking, lastAction } }
+    this.remoteControllers = new Map();
+
+    // Ondas expansivas de clics: [ { normX, normY, radius, maxRadius, alpha, color } ]
     this.ripples = [];
-    // Trazos temporales de dibujo: [ { points: [ {x, y} ], color, alpha, timestamp } ]
+    // Trazos temporales de dibujo: [ { points: [ {normX, normY} ], color, alpha, timestamp } ]
     this.strokes = [];
 
     this.myColor = this.getRandomBrightColor();
@@ -33,53 +36,86 @@ class LaserController {
     return colors[Math.floor(Math.random() * colors.length)];
   }
 
+  /**
+   * Asegura que las dimensiones internas del canvas (buffer) coincidan
+   * exactamente 1:1 con sus dimensiones CSS visibles en pantalla.
+   * Evita distorsiones, estiramientos o desplazamiento de coordenadas.
+   */
   resizeCanvas() {
-    const rect = this.video.getBoundingClientRect();
-    if (this.canvas.width !== rect.width || this.canvas.height !== rect.height) {
-      this.canvas.width = rect.width;
-      this.canvas.height = rect.height;
+    const cRect = this.canvas.getBoundingClientRect();
+    const targetWidth = Math.round(cRect.width);
+    const targetHeight = Math.round(cRect.height);
+
+    if (targetWidth > 0 && targetHeight > 0) {
+      if (this.canvas.width !== targetWidth || this.canvas.height !== targetHeight) {
+        this.canvas.width = targetWidth;
+        this.canvas.height = targetHeight;
+      }
     }
   }
 
   /**
-   * Calcula el área real del video renderizado considerando 'object-contain'
+   * Calcula el área real donde se renderiza el video dentro del canvas
+   * considerando dimensiones del elemento video, aspect ratio original y letterboxing.
    */
   getVideoRenderRect() {
-    const canvasRect = this.canvas.getBoundingClientRect();
-    const videoWidth = this.video.videoWidth || canvasRect.width;
-    const videoHeight = this.video.videoHeight || canvasRect.height;
+    const cRect = this.canvas.getBoundingClientRect();
+    const vRect = this.video.getBoundingClientRect();
+
+    const videoWidth = this.video.videoWidth || (vRect.width > 0 ? vRect.width : cRect.width);
+    const videoHeight = this.video.videoHeight || (vRect.height > 0 ? vRect.height : cRect.height);
 
     const videoRatio = videoWidth / videoHeight;
-    const canvasRatio = canvasRect.width / canvasRect.height;
+    const elementRatio = (vRect.width > 0 && vRect.height > 0) ? (vRect.width / vRect.height) : (cRect.width / cRect.height);
 
-    let renderWidth, renderHeight, offsetX, offsetY;
+    let actualWidth = vRect.width > 0 ? vRect.width : cRect.width;
+    let actualHeight = vRect.height > 0 ? vRect.height : cRect.height;
+    let letterboxX = 0;
+    let letterboxY = 0;
 
-    if (canvasRatio > videoRatio) {
-      renderHeight = canvasRect.height;
-      renderWidth = renderHeight * videoRatio;
-      offsetX = (canvasRect.width - renderWidth) / 2;
-      offsetY = 0;
-    } else {
-      renderWidth = canvasRect.width;
-      renderHeight = renderWidth / videoRatio;
-      offsetX = 0;
-      offsetY = (canvasRect.height - renderHeight) / 2;
+    if (vRect.width > 0 && vRect.height > 0) {
+      if (elementRatio > videoRatio) {
+        // Elemento más ancho que el video -> letterbox horizontal
+        actualHeight = vRect.height;
+        actualWidth = actualHeight * videoRatio;
+        letterboxX = (vRect.width - actualWidth) / 2;
+        letterboxY = 0;
+      } else {
+        // Elemento más alto que el video -> letterbox vertical
+        actualWidth = vRect.width;
+        actualHeight = actualWidth / videoRatio;
+        letterboxX = 0;
+        letterboxY = (vRect.height - actualHeight) / 2;
+      }
     }
 
-    return { offsetX, offsetY, renderWidth, renderHeight };
+    const videoLeftInCanvas = vRect.left - cRect.left;
+    const videoTopInCanvas = vRect.top - cRect.top;
+
+    const offsetX = videoLeftInCanvas + letterboxX;
+    const offsetY = videoTopInCanvas + letterboxY;
+
+    return {
+      offsetX,
+      offsetY,
+      renderWidth: Math.max(1, actualWidth),
+      renderHeight: Math.max(1, actualHeight)
+    };
   }
 
   /**
-   * Convierte coordenadas de ratón en el canvas a coordenadas normalizadas [0, 1]
+   * Convierte coordenadas de ratón (clientX, clientY) en coordenadas normalizadas [0.0, 1.0]
+   * referenciadas estrictamente al contenido visible del video.
    */
   normalizeCoords(clientX, clientY) {
-    const rect = this.canvas.getBoundingClientRect();
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
+    this.resizeCanvas();
+    const cRect = this.canvas.getBoundingClientRect();
+    const mouseCanvasX = clientX - cRect.left;
+    const mouseCanvasY = clientY - cRect.top;
 
     const vRect = this.getVideoRenderRect();
-    const normX = (x - vRect.offsetX) / vRect.renderWidth;
-    const normY = (y - vRect.offsetY) / vRect.renderHeight;
+    const normX = (mouseCanvasX - vRect.offsetX) / vRect.renderWidth;
+    const normY = (mouseCanvasY - vRect.offsetY) / vRect.renderHeight;
 
     return {
       x: Math.max(0, Math.min(1, normX)),
@@ -89,7 +125,7 @@ class LaserController {
   }
 
   /**
-   * Convierte coordenadas normalizadas [0, 1] a pixeles del canvas actual
+   * Convierte coordenadas normalizadas [0.0, 1.0] a píxeles exactos en el canvas local
    */
   denormalizeCoords(normX, normY) {
     const vRect = this.getVideoRenderRect();
@@ -110,7 +146,6 @@ class LaserController {
 
       requestAnimationFrame(() => {
         moveRafPending = false;
-        this.resizeCanvas();
         const coords = this.normalizeCoords(e.clientX, e.clientY);
         if (coords.inside) {
           if (this.isDrawing && this.lastPosition) {
@@ -130,7 +165,6 @@ class LaserController {
 
     this.canvas.addEventListener('mousedown', (e) => {
       if (!this.isActive) return;
-      this.resizeCanvas();
       const coords = this.normalizeCoords(e.clientX, e.clientY);
       if (coords.inside) {
         this.isDrawing = true;
@@ -153,7 +187,7 @@ class LaserController {
     });
   }
 
-  // Recibir eventos de otros usuarios
+  // Recibir eventos de puntero láser de otros usuarios
   handleRemotePointer(data) {
     const { senderId, senderName, type, x, y, color } = data;
 
@@ -174,6 +208,49 @@ class LaserController {
       });
     } else if (type === 'draw') {
       this.addDrawingPoint(x, y, color || '#f43f5e');
+    }
+  }
+
+  // Recibir eventos de Control Remoto de ratón / teclado de otros usuarios
+  handleRemoteControl(data) {
+    const { senderId, senderName, type, x, y, button, key } = data;
+    let ctrl = this.remoteControllers.get(senderId);
+    if (!ctrl) {
+      ctrl = {
+        x: x !== undefined ? x : 0.5,
+        y: y !== undefined ? y : 0.5,
+        name: senderName || 'Operador',
+        color: '#10b981',
+        lastUpdated: Date.now(),
+        isClicking: false,
+        lastAction: ''
+      };
+      this.remoteControllers.set(senderId, ctrl);
+    }
+
+    if (x !== undefined && y !== undefined) {
+      ctrl.x = x;
+      ctrl.y = y;
+    }
+    ctrl.lastUpdated = Date.now();
+
+    if (type === 'move') {
+      ctrl.lastAction = '';
+    } else if (type === 'click' || type === 'mousedown') {
+      ctrl.isClicking = true;
+      ctrl.lastAction = button === 2 ? 'Clic Derecho' : 'Clic';
+      this.addRipple(ctrl.x, ctrl.y, button === 2 ? '#a855f7' : '#10b981');
+      setTimeout(() => { ctrl.isClicking = false; }, 180);
+    } else if (type === 'dblclick') {
+      ctrl.lastAction = 'Doble Clic';
+      this.addRipple(ctrl.x, ctrl.y, '#3b82f6');
+    } else if (type === 'contextmenu') {
+      ctrl.lastAction = 'Clic Derecho';
+      this.addRipple(ctrl.x, ctrl.y, '#a855f7');
+    } else if (type === 'wheel') {
+      ctrl.lastAction = 'Scroll';
+    } else if (type === 'keydown') {
+      ctrl.lastAction = `Tecla: ${key}`;
     }
   }
 
@@ -203,6 +280,7 @@ class LaserController {
 
   clearCanvas() {
     this.remotePointers.clear();
+    this.remoteControllers.clear();
     this.ripples = [];
     this.strokes = [];
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -267,9 +345,8 @@ class LaserController {
         }
       }
 
-      // 3. Dibujar punteros remotos
+      // 3. Dibujar punteros remotos (Modo Láser)
       for (const [senderId, ptr] of this.remotePointers.entries()) {
-        // Desvanecer si no hay movimiento en 4 segundos
         if (now - ptr.lastUpdated > 4000) {
           this.remotePointers.delete(senderId);
           continue;
@@ -307,6 +384,52 @@ class LaserController {
 
         this.ctx.fillStyle = ptr.color;
         this.ctx.fillText(ptr.name, tagX, tagY);
+      }
+
+      // 4. Dibujar cursores de Control Remoto de ratón
+      for (const [senderId, ctrl] of this.remoteControllers.entries()) {
+        if (now - ctrl.lastUpdated > 5000) {
+          this.remoteControllers.delete(senderId);
+          continue;
+        }
+
+        const pos = this.denormalizeCoords(ctrl.x, ctrl.y);
+
+        // Dibujar flecha de ratón estilo OS
+        this.ctx.save();
+        this.ctx.translate(pos.x, pos.y);
+        this.ctx.beginPath();
+        this.ctx.moveTo(0, 0);
+        this.ctx.lineTo(0, 16);
+        this.ctx.lineTo(4, 12);
+        this.ctx.lineTo(8, 20);
+        this.ctx.lineTo(11, 18);
+        this.ctx.lineTo(7, 11);
+        this.ctx.lineTo(13, 11);
+        this.ctx.closePath();
+        this.ctx.fillStyle = ctrl.isClicking ? '#059669' : '#10b981';
+        this.ctx.fill();
+        this.ctx.lineWidth = 1.5;
+        this.ctx.strokeStyle = '#ffffff';
+        this.ctx.stroke();
+        this.ctx.restore();
+
+        // Etiqueta de control
+        this.ctx.font = '700 10px Plus Jakarta Sans, sans-serif';
+        const label = ctrl.lastAction ? `${ctrl.name} (${ctrl.lastAction})` : `${ctrl.name} [Control]`;
+        const textWidth = this.ctx.measureText(label).width;
+        const tagX = pos.x + 14;
+        const tagY = pos.y + 14;
+
+        this.ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+        this.ctx.beginPath();
+        this.ctx.roundRect(tagX - 4, tagY - 11, textWidth + 8, 16, 4);
+        this.ctx.fill();
+        this.ctx.strokeStyle = 'rgba(16, 185, 129, 0.5)';
+        this.ctx.stroke();
+
+        this.ctx.fillStyle = '#6ee7b7';
+        this.ctx.fillText(label, tagX, tagY);
       }
 
       requestAnimationFrame(render);
