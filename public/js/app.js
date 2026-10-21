@@ -1882,6 +1882,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   let recInterval = null;
   let recSeconds = 0;
   let isRecording = false;
+  let recordingAudioContext = null;
+  let isTempRecordingCapture = false;
 
   function formatRecTime(sec) {
     const m = Math.floor(sec / 60).toString().padStart(2, '0');
@@ -1898,36 +1900,108 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function startRecording() {
-    // Determinar stream a grabar
+    // Determinar stream de video a grabar
     let streamToRecord = null;
-    if (screenVideo && screenVideo.srcObject && screenVideo.srcObject.getVideoTracks().length > 0) {
+    isTempRecordingCapture = false;
+
+    if (screenVideo && screenVideo.srcObject && screenVideo.srcObject.getVideoTracks && screenVideo.srcObject.getVideoTracks().some((t) => t.readyState === 'live')) {
       streamToRecord = screenVideo.srcObject;
-    } else if (webrtc && webrtc.localScreenStream) {
+    } else if (webrtc && webrtc.localScreenStream && webrtc.localScreenStream.getVideoTracks().some((t) => t.readyState === 'live')) {
       streamToRecord = webrtc.localScreenStream;
+    } else if (activeScreens && activeScreens.size > 0) {
+      for (const sData of activeScreens.values()) {
+        if (sData.stream && sData.stream.getVideoTracks().some((t) => t.readyState === 'live')) {
+          streamToRecord = sData.stream;
+          break;
+        }
+      }
     }
 
+    // Si nadie está compartiendo pantalla en la sesión, solicitar al usuario qué ventana o pantalla desea grabar
     if (!streamToRecord) {
-      showToast('⚠️ No hay ninguna pantalla compartida activa para grabar', 'info');
-      return;
+      try {
+        showToast('Elige la pantalla o ventana que deseas grabar...', 'info');
+        streamToRecord = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            cursor: 'always',
+            width: { ideal: 1920, max: 3840 },
+            height: { ideal: 1080, max: 2160 }
+          },
+          audio: false
+        });
+        isTempRecordingCapture = true;
+      } catch (e) {
+        showToast('Grabación cancelada', 'info');
+        return;
+      }
     }
 
     try {
-      // Combinar audio de la llamada si está disponible
-      const tracks = [...streamToRecord.getVideoTracks()];
-      if (webrtc && webrtc.localAudioStream) {
-        tracks.push(...webrtc.localAudioStream.getAudioTracks());
-      }
-      const combinedStream = new MediaStream(tracks);
+      // Mezcla de Audio: Micrófono local + Voces remotas de la llamada
+      const combinedTracks = [...streamToRecord.getVideoTracks()];
+      const micTracks = (webrtc && webrtc.localAudioStream) ? webrtc.localAudioStream.getAudioTracks().filter((t) => t.readyState === 'live') : [];
+      
+      const remoteAudioEls = remoteAudios ? Array.from(remoteAudios.querySelectorAll('audio')) : [];
+      const activeRemoteStreams = remoteAudioEls
+        .map((el) => el.srcObject)
+        .filter((s) => s && s.getAudioTracks && s.getAudioTracks().some((t) => t.readyState === 'live'));
 
-      let mimeType = 'video/webm;codecs=vp9,opus';
-      if (!MediaRecorder.isTypeSupported(mimeType)) {
-        mimeType = 'video/webm;codecs=vp8,opus';
-        if (!MediaRecorder.isTypeSupported(mimeType)) {
-          mimeType = 'video/webm';
+      const totalAudioSources = (micTracks.length > 0 ? 1 : 0) + activeRemoteStreams.length;
+
+      if (totalAudioSources > 1 && (window.AudioContext || window.webkitAudioContext)) {
+        try {
+          recordingAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+          const dest = recordingAudioContext.createMediaStreamDestination();
+
+          if (micTracks.length > 0) {
+            const micSource = recordingAudioContext.createMediaStreamSource(webrtc.localAudioStream);
+            micSource.connect(dest);
+          }
+
+          activeRemoteStreams.forEach((stream) => {
+            try {
+              const rSource = recordingAudioContext.createMediaStreamSource(stream);
+              rSource.connect(dest);
+            } catch (e) {}
+          });
+
+          const mixedTracks = dest.stream.getAudioTracks();
+          if (mixedTracks.length > 0) {
+            combinedTracks.push(mixedTracks[0]);
+          }
+        } catch (mixErr) {
+          console.warn('Error mezclando audio para grabación, usando micrófono directo:', mixErr);
+          if (micTracks.length > 0) combinedTracks.push(micTracks[0]);
         }
+      } else if (micTracks.length > 0) {
+        combinedTracks.push(micTracks[0]);
+      } else if (activeRemoteStreams.length > 0) {
+        combinedTracks.push(activeRemoteStreams[0].getAudioTracks()[0]);
       }
 
-      mediaRecorder = new MediaRecorder(combinedStream, { mimeType });
+      // Si el stream de captura traía audio propio de sistema, incluirlo
+      if (streamToRecord.getAudioTracks().length > 0) {
+        combinedTracks.push(streamToRecord.getAudioTracks()[0]);
+      }
+
+      const combinedStream = new MediaStream(combinedTracks);
+
+      // Selección de codec compatible
+      const candidateTypes = [
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp8,opus',
+        'video/webm;codecs=h264,opus',
+        'video/webm',
+        'video/mp4;codecs=h264,aac',
+        'video/mp4'
+      ];
+      let selectedMimeType = '';
+      if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported) {
+        selectedMimeType = candidateTypes.find((type) => MediaRecorder.isTypeSupported(type)) || '';
+      }
+
+      const recorderOptions = selectedMimeType ? { mimeType: selectedMimeType } : {};
+      mediaRecorder = new MediaRecorder(combinedStream, recorderOptions);
       recordedChunks = [];
 
       mediaRecorder.ondataavailable = (e) => {
@@ -1937,22 +2011,47 @@ document.addEventListener('DOMContentLoaded', async () => {
       };
 
       mediaRecorder.onstop = () => {
+        if (recordingAudioContext && recordingAudioContext.state !== 'closed') {
+          try { recordingAudioContext.close(); } catch (e) {}
+          recordingAudioContext = null;
+        }
+
+        if (isTempRecordingCapture && streamToRecord) {
+          try {
+            streamToRecord.getTracks().forEach((t) => t.stop());
+          } catch (e) {}
+        }
+
         if (recordedChunks.length === 0) return;
-        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        const actualType = mediaRecorder.mimeType || 'video/webm';
+        const isMp4 = actualType.includes('mp4');
+        const ext = isMp4 ? '.mp4' : '.webm';
+
+        const blob = new Blob(recordedChunks, { type: actualType });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.style.display = 'none';
         a.href = url;
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-        a.download = 'Conecty-Grabacion-' + timestamp + '.webm';
+        a.download = 'Conecty-Grabacion-' + timestamp + ext;
         document.body.appendChild(a);
         a.click();
         setTimeout(() => {
           document.body.removeChild(a);
           window.URL.revokeObjectURL(url);
-        }, 100);
+        }, 300);
         showToast('💾 Grabación guardada y descargada con éxito', 'success');
       };
+
+      // Si el video de pantalla se detiene mientras graba, guardar automáticamente
+      const vTrack = streamToRecord.getVideoTracks()[0];
+      if (vTrack) {
+        vTrack.addEventListener('ended', () => {
+          if (isRecording) {
+            stopRecording();
+          }
+        }, { once: true });
+      }
 
       mediaRecorder.start(1000); // Guardar chunk cada 1 segundo
       isRecording = true;
@@ -1978,7 +2077,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function stopRecording() {
     if (mediaRecorder && isRecording) {
-      mediaRecorder.stop();
+      try {
+        mediaRecorder.stop();
+      } catch (e) {}
       isRecording = false;
       clearInterval(recInterval);
       recTimer.classList.add('hidden');
