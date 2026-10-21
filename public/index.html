@@ -310,6 +310,37 @@
               <span id="pipBtnText">Ver Miniatura</span>
             </button>
           </div>
+
+          <!-- Cuadro explicativo y botón para Clics Físicos en Windows -->
+          <div id="agentStatusCard" class="mt-4 p-3.5 rounded-2xl bg-indigo-950/40 border border-indigo-700/40 text-left space-y-2">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center space-x-2 text-indigo-300 font-bold text-xs">
+                <i data-lucide="mouse-pointer-click" class="w-4 h-4"></i>
+                <span>Control Físico de Ratón y Teclado (Windows OS)</span>
+              </div>
+              <span id="agentStatusBadge" class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">
+                Asistente No Conectado
+              </span>
+            </div>
+            <p id="agentStatusDesc" class="text-[11px] text-slate-300 leading-relaxed">
+              Por seguridad de Windows, una página web no puede hacer clic en tus otras aplicaciones (Edge, YouTube, etc.) sin un asistente con permisos. Ejecuta el asistente nativo para habilitar clics físicos en tu equipo:
+            </p>
+            <div id="agentActionsRow" class="flex flex-col sm:flex-row gap-2 pt-1">
+              <button id="btnDownloadAgentCard" class="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl shadow-md flex items-center justify-center space-x-1.5 transition">
+                <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                <span>Descargar Asistente (.bat)</span>
+              </button>
+              <button id="btnCopyAgentCode" class="w-full sm:w-auto px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium rounded-xl border border-slate-700 flex items-center justify-center space-x-1.5 transition">
+                <i data-lucide="terminal" class="w-3.5 h-3.5"></i>
+                <span>Copiar Comando</span>
+              </button>
+            </div>
+            <!-- Mensaje cuando el asistente está activo -->
+            <div id="agentConnectedAlert" class="hidden p-2.5 rounded-xl bg-emerald-950/60 border border-emerald-600/50 flex items-center space-x-2 text-emerald-200 text-xs">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+              <span class="font-medium">Asistente de Windows Conectado: El operador puede hacer clic físico sobre cualquier ventana y programa de tu PC.</span>
+            </div>
+          </div>
           <!-- Miniatura colapsable opcional -->
           <div id="pipPreviewContainer" class="mt-4 rounded-xl overflow-hidden border border-slate-700/80 hidden max-w-xs mx-auto shadow-lg">
             <video id="pipVideo" autoplay playsinline muted class="w-full h-auto bg-black"></video>
@@ -837,11 +868,17 @@
               <p class="text-slate-300 leading-relaxed text-[11px]">
                 Por seguridad del sistema operativo, ningún navegador web puede mover el cursor de Windows en otras ventanas sin un asistente. Si deseas que el operador controle cualquier programa de tu PC, ejecuta el asistente nativo de Conecty:
               </p>
-              <div class="p-2.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-indigo-200 flex items-center justify-between">
-                <code>node agent/conecty-agent.js</code>
-                <button id="btnCopyAgentCmd" class="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white" title="Copiar comando">
-                  <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+              <div class="flex flex-col sm:flex-row gap-2 pt-1">
+                <button id="btnDownloadAgentSettings" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl shadow-md flex items-center justify-center space-x-1.5 transition">
+                  <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                  <span>Descargar Asistente (.bat)</span>
                 </button>
+                <div class="flex-1 p-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-indigo-200 flex items-center justify-between">
+                  <code id="cmdAgentDisplay">irm conecty.appzplay.online/api/download-agent | iex</code>
+                  <button id="btnCopyAgentCmd" class="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white" title="Copiar comando">
+                    <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                  </button>
+                </div>
               </div>
               <p class="text-[10px] text-slate-400">
                 * El modo web estándar ya funciona con clics, arrastre, scroll y teclado interactivo dentro de la ventana de Conecty.

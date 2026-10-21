@@ -45,6 +45,218 @@ app.get('/api/config', (req, res) => {
   res.json({ iceServers });
 });
 
+// Descarga del Asistente de Control Remoto de Windows (.bat autónomo sin dependencias)
+app.get('/api/download-agent', (req, res) => {
+  const deviceId = (req.query.deviceId || '').replace(/\D/g, '');
+  const serverHost = `${req.protocol}://${req.get('host')}`;
+
+  const batContent = `<# :
+@echo off
+setlocal
+title Conecty - Asistente de Control Remoto de Windows
+chcp 65001 > nul
+cls
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-Expression (Get-Content -LiteralPath '%~f0' -Raw)"
+if %ERRORLEVEL% NEQ 0 (
+  echo.
+  echo [ERROR] Hubo un problema al ejecutar el asistente.
+  pause
+)
+exit /b %ERRORLEVEL%
+#>
+
+Param(
+  [string]$ServerUrl = "${serverHost}",
+  [string]$DeviceId = "${deviceId}"
+)
+
+$Host.UI.RawUI.WindowTitle = "Conecty - Asistente de Control Remoto Windows"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+Write-Host "============================================================" -ForegroundColor Cyan
+Write-Host "  🚀 CONECTY - ASISTENTE DE CONTROL REMOTO (WINDOWS)" -ForegroundColor White
+Write-Host "============================================================" -ForegroundColor Cyan
+
+# Solicitar ID de dispositivo si no está preconfigurado
+while (-not $DeviceId -or $DeviceId.Trim().Length -ne 9) {
+  Write-Host "Por favor ingresa tu número Conecty de 9 dígitos (ej. 486782545):" -ForegroundColor Yellow
+  $DeviceId = (Read-Host "ID Conecty").Trim()
+  $DeviceId = $DeviceId -replace '\D',''
+}
+
+$cleanId = $DeviceId -replace '\D',''
+$roomId = "device-$cleanId"
+
+Write-Host "  Dispositivo Conecty : $cleanId" -ForegroundColor Yellow
+Write-Host "  Servidor           : $ServerUrl" -ForegroundColor Gray
+Write-Host "============================================================" -ForegroundColor Cyan
+Write-Host ""
+
+# Cargar controladores de Win32 para ratón y teclado físico
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+
+public class Win32InputNative {
+    [DllImport("user32.dll")]
+    public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
+
+    [DllImport("user32.dll")]
+    public static extern bool SetCursorPos(int X, int Y);
+}
+"@
+
+$screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+
+# Conectar por WebSocket nativo (.NET)
+$wsUrl = $ServerUrl.Replace("http://", "ws://").Replace("https://", "wss://")
+if (-not $wsUrl.EndsWith("/")) { $wsUrl += "/" }
+$wsUrl += "socket.io/?EIO=4&transport=websocket"
+
+Write-Host "[1/3] Conectando al servidor..." -ForegroundColor Gray
+$ws = New-Object System.Net.WebSockets.ClientWebSocket
+$cts = New-Object System.Threading.CancellationTokenSource(12000)
+
+try {
+  $ws.ConnectAsync([System.Uri]::new($wsUrl), $cts.Token).Wait()
+} catch {
+  Write-Host "[ERROR] No se pudo conectar al servidor de Conecty: $_" -ForegroundColor Red
+  Read-Host "Presiona Enter para salir..."
+  exit 1
+}
+
+function Send-WS([string]$text) {
+  if ($ws.State -ne [System.Net.WebSockets.WebSocketState]::Open) { return }
+  $bytes = [System.Text.Encoding]::UTF8.GetBytes($text)
+  $seg = New-Object System.ArraySegment[byte] ($bytes, 0, $bytes.Length)
+  $ws.SendAsync($seg, [System.Net.WebSockets.WebSocketMessageType]::Text, $true, [System.Threading.CancellationToken]::None).Wait()
+}
+
+$buf = New-Object byte[] 32768
+$seg = New-Object System.ArraySegment[byte] ($buf, 0, $buf.Length)
+
+# Handshake inicial Socket.io
+$rec = $ws.ReceiveAsync($seg, [System.Threading.CancellationToken]::None)
+$rec.Wait()
+Send-WS "40"
+$rec = $ws.ReceiveAsync($seg, [System.Threading.CancellationToken]::None)
+$rec.Wait()
+
+Write-Host "[2/3] Registrando permisos de control físico para tu equipo..." -ForegroundColor Gray
+$regPayload = '42["register-device",{"deviceId":"' + $cleanId + '","userName":"Windows-Native-Agent","isAgent":true}]'
+Send-WS $regPayload
+
+$joinPayload = '42["join-room",{"roomId":"' + $roomId + '","userName":"Windows-Native-Agent","deviceId":"' + $cleanId + '","isAgent":true}]'
+Send-WS $joinPayload
+
+Write-Host "[3/3] ¡SINCRONIZADO!" -ForegroundColor Green
+Write-Host "============================================================" -ForegroundColor Green
+Write-Host "  ✅ ASISTENTE CONECTADO Y ACTIVO" -ForegroundColor White
+Write-Host "  Cualquier clic del operador sobre tu pantalla compartida" -ForegroundColor Gray
+Write-Host "  se ejecutará en vivo sobre YouTube, Edge, apps y Windows." -ForegroundColor Gray
+Write-Host "  (Mantén esta ventana abierta mientras dure la llamada)" -ForegroundColor Yellow
+Write-Host "============================================================" -ForegroundColor Green
+Write-Host ""
+
+while ($ws.State -eq [System.Net.WebSockets.WebSocketState]::Open) {
+  try {
+    $rec = $ws.ReceiveAsync($seg, [System.Threading.CancellationToken]::None)
+    $rec.Wait()
+    if ($rec.Result.Count -le 0) { continue }
+    $msg = [System.Text.Encoding]::UTF8.GetString($buf, 0, $rec.Result.Count)
+
+    if ($msg -eq "2") {
+      Send-WS "3"
+      continue
+    }
+
+    if ($msg.StartsWith("42")) {
+      $jsonStr = $msg.Substring(2)
+      $parsed = $jsonStr | ConvertFrom-Json
+      $eventName = $parsed[0]
+      if ($eventName -eq "remote-control") {
+        $ev = $parsed[1]
+        $type = $ev.type
+
+        if ($type -eq "move" -and $null -ne $ev.x -and $null -ne $ev.y) {
+          $px = [int]($screen.Width * [double]$ev.x)
+          $py = [int]($screen.Height * [double]$ev.y)
+          [Win32InputNative]::SetCursorPos($px, $py)
+        }
+        elseif ($type -eq "click" -or $type -eq "mousedown") {
+          $px = [int]($screen.Width * [double]$ev.x)
+          $py = [int]($screen.Height * [double]$ev.y)
+          [Win32InputNative]::SetCursorPos($px, $py)
+
+          $btn = if ($null -ne $ev.button) { [int]$ev.button } else { 0 }
+          $down = if ($btn -eq 2) { 0x0008 } else { 0x0002 }
+          $up   = if ($btn -eq 2) { 0x0010 } else { 0x0004 }
+
+          [Win32InputNative]::mouse_event($down, 0, 0, 0, 0)
+          if ($type -eq "click") {
+            [Win32InputNative]::mouse_event($up, 0, 0, 0, 0)
+          }
+          Write-Host "  🖱️ Clic en ($px, $py) Botón: $(if ($btn -eq 2) {'Derecho'} else {'Izquierdo'})" -ForegroundColor Green
+        }
+        elseif ($type -eq "mouseup") {
+          $px = [int]($screen.Width * [double]$ev.x)
+          $py = [int]($screen.Height * [double]$ev.y)
+          [Win32InputNative]::SetCursorPos($px, $py)
+          $btn = if ($null -ne $ev.button) { [int]$ev.button } else { 0 }
+          $up  = if ($btn -eq 2) { 0x0010 } else { 0x0004 }
+          [Win32InputNative]::mouse_event($up, 0, 0, 0, 0)
+        }
+        elseif ($type -eq "dblclick") {
+          $px = [int]($screen.Width * [double]$ev.x)
+          $py = [int]($screen.Height * [double]$ev.y)
+          [Win32InputNative]::SetCursorPos($px, $py)
+          [Win32InputNative]::mouse_event(0x0002, 0, 0, 0, 0)
+          [Win32InputNative]::mouse_event(0x0004, 0, 0, 0, 0)
+          Start-Sleep -Milliseconds 40
+          [Win32InputNative]::mouse_event(0x0002, 0, 0, 0, 0)
+          [Win32InputNative]::mouse_event(0x0004, 0, 0, 0, 0)
+          Write-Host "  ⚡ Doble Clic en ($px, $py)" -ForegroundColor Green
+        }
+        elseif ($type -eq "wheel" -and $null -ne $ev.deltaY) {
+          $amount = if ([double]$ev.deltaY -gt 0) { -120 } else { 120 }
+          [Win32InputNative]::mouse_event(0x0800, 0, 0, $amount, 0)
+        }
+        elseif ($type -eq "keydown" -and $null -ne $ev.key) {
+          $key = [string]$ev.key
+          if ($key.Length -eq 1) {
+            $sanitized = $key -replace '([+^%~(){}\[\]])', '{$1}'
+            [System.Windows.Forms.SendKeys]::SendWait($sanitized)
+          } elseif ($key -eq "Enter") {
+            [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
+          } elseif ($key -eq "Backspace") {
+            [System.Windows.Forms.SendKeys]::SendWait("{BACKSPACE}")
+          } elseif ($key -eq "Tab") {
+            [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
+          } elseif ($key -eq "Escape") {
+            [System.Windows.Forms.SendKeys]::SendWait("{ESC}")
+          } elseif ($key -eq " ") {
+            [System.Windows.Forms.SendKeys]::SendWait(" ")
+          }
+          Write-Host "  ⌨️ Tecla: $key" -ForegroundColor Cyan
+        }
+      }
+    }
+  } catch {
+    if ($ws.State -eq [System.Net.WebSockets.WebSocketState]::Open) {
+      Write-Host "[AVISO] " + $_.Exception.Message -ForegroundColor DarkGray
+    }
+  }
+}
+
+Write-Host "Asistente desconectado." -ForegroundColor Yellow
+`;
+
+  res.setHeader('Content-Type', 'application/x-bat');
+  res.setHeader('Content-Disposition', `attachment; filename="Conecty-Control-${deviceId || 'Windows'}.bat"`);
+  res.send(batContent);
+});
+
 // Almacén de salas en memoria
 // roomId -> Map(socketId -> { id, name, isScreenSharing, isAudioMuted })
 const rooms = new Map();
@@ -73,18 +285,23 @@ io.on('connection', (socket) => {
   socket.authorizedRooms = new Set();
 
   // Registro del dispositivo en línea al abrir Conecty
-  socket.on('register-device', ({ deviceId, userName }) => {
+  socket.on('register-device', ({ deviceId, userName, isAgent }) => {
     if (!deviceId) return;
     const cleanId = deviceId.toString().replace(/\D/g, '');
     socket.deviceId = cleanId;
+    socket.isAgent = Boolean(isAgent);
     socket.userName = (userName && userName.trim()) || ('Usuario-' + cleanId.substring(0, 4));
 
-    onlineDevices.set(cleanId, {
-      socketId: socket.id,
-      deviceId: cleanId,
-      userName: socket.userName
-    });
-    socketDeviceMap.set(socket.id, cleanId);
+    // Si NO es agente, o si el dispositivo aún no tiene host registrado, lo asociamos a onlineDevices
+    if (!socket.isAgent || !onlineDevices.has(cleanId)) {
+      onlineDevices.set(cleanId, {
+        socketId: socket.id,
+        deviceId: cleanId,
+        userName: socket.userName,
+        isAgent: socket.isAgent
+      });
+      socketDeviceMap.set(socket.id, cleanId);
+    }
 
     // Su propio dispositivo siempre está autorizado para su propia sala
     socket.authorizedRooms.add('device-' + cleanId);
@@ -92,7 +309,8 @@ io.on('connection', (socket) => {
     socket.emit('device-registered', {
       deviceId: cleanId,
       userName: socket.userName,
-      isOnline: true
+      isOnline: true,
+      isAgent: socket.isAgent
     });
   });
 
@@ -247,7 +465,7 @@ io.on('connection', (socket) => {
   });
 
   // ================= UNIÓN Y GESTIÓN DE SALA =================
-  socket.on('join-room', ({ roomId, userName, deviceId }) => {
+  socket.on('join-room', ({ roomId, userName, deviceId, isAgent }) => {
     if (!socket.authorizedRooms) {
       socket.authorizedRooms = new Set();
     }
@@ -272,6 +490,7 @@ io.on('connection', (socket) => {
       id: socket.id,
       name: userName || socket.userName || 'Participante',
       deviceId: deviceId || socket.deviceId || '',
+      isAgent: Boolean(isAgent || socket.isAgent),
       isScreenSharing: false,
       isAudioMuted: false
     };
@@ -387,7 +606,8 @@ io.on('connection', (socket) => {
 
       socket.to(currentRoom).emit('user-disconnected', {
         userId: socket.id,
-        userName: currentUser ? currentUser.name : (socket.userName || 'Usuario')
+        userName: currentUser ? currentUser.name : (socket.userName || 'Usuario'),
+        isAgent: Boolean(currentUser ? currentUser.isAgent : socket.isAgent)
       });
 
       if (roomUsers.size === 0) {
@@ -397,10 +617,13 @@ io.on('connection', (socket) => {
     currentRoom = null;
     currentUser = null;
 
-    // Desregistrar dispositivo de onlineDevices
+    // Desregistrar dispositivo de onlineDevices solo si este socket era el host registrado
     const cleanDeviceId = socketDeviceMap.get(socket.id);
     if (cleanDeviceId) {
-      onlineDevices.delete(cleanDeviceId);
+      const reg = onlineDevices.get(cleanDeviceId);
+      if (reg && reg.socketId === socket.id) {
+        onlineDevices.delete(cleanDeviceId);
+      }
       socketDeviceMap.delete(socket.id);
     }
 

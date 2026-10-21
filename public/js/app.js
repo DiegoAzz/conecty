@@ -277,12 +277,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  btnCopyAgentCmd.addEventListener('click', () => {
-    navigator.clipboard.writeText(`node agent/conecty-agent.js ${window.location.origin} ${myDeviceId}`).then(() => {
-      showToast('📋 Comando del Asistente Windows copiado al portapapeles', 'success');
-    });
-  });
-
   // Navegación de pestañas en el Modal de Configuración
   const tabButtons = document.querySelectorAll('.settings-tab-btn');
   const tabPanes = {
@@ -774,15 +768,97 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // ================= 6. MODO CONTROL REMOTO DE RATÓN Y TECLADO =================
+  let isAgentActive = false;
+  let lastSocketMoveTime = 0;
+  const seenRemoteControlEvents = new Set();
+
+  function updateAgentStatusUI(active) {
+    isAgentActive = active;
+    const badge = document.getElementById('agentStatusBadge');
+    const alertBox = document.getElementById('agentConnectedAlert');
+    const actionsRow = document.getElementById('agentActionsRow');
+    const desc = document.getElementById('agentStatusDesc');
+    const bannerText = document.getElementById('remoteControlBannerText');
+
+    if (badge) {
+      if (active) {
+        badge.textContent = '🟢 Asistente Conectado';
+        badge.className = 'px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950 text-emerald-300 border border-emerald-600/60';
+      } else {
+        badge.textContent = 'Asistente No Conectado';
+        badge.className = 'px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700';
+      }
+    }
+    if (alertBox) {
+      alertBox.classList.toggle('hidden', !active);
+    }
+    if (actionsRow) {
+      actionsRow.classList.toggle('hidden', active);
+    }
+    if (desc) {
+      desc.classList.toggle('hidden', active);
+    }
+    if (bannerText) {
+      bannerText.textContent = active 
+        ? '🟢 Control Remoto Total (Windows OS Habilitado)' 
+        : '🎮 Modo Control Remoto Activo';
+    }
+  }
+
+  // Asistente Nativo de Control Remoto de Windows (.bat)
+  const btnDownloadAgentCard = document.getElementById('btnDownloadAgentCard');
+  const btnCopyAgentCode = document.getElementById('btnCopyAgentCode');
+  const btnDownloadAgentSettings = document.getElementById('btnDownloadAgentSettings');
+
+  const downloadAgentHandler = () => {
+    const url = `/api/download-agent?deviceId=${myDeviceId || ''}`;
+    window.location.href = url;
+    showToast('Descargando Conecty-Control.bat...', 'success');
+  };
+
+  const copyAgentCommandHandler = () => {
+    const cmd = `irm ${window.location.origin}/api/download-agent?deviceId=${myDeviceId} | iex`;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(cmd).then(() => {
+        showToast('📋 Comando copiado al portapapeles', 'success');
+      }).catch(() => {
+        prompt('Copia este comando para PowerShell:', cmd);
+      });
+    } else {
+      prompt('Copia este comando para PowerShell:', cmd);
+    }
+  };
+
+  if (btnDownloadAgentCard) btnDownloadAgentCard.addEventListener('click', downloadAgentHandler);
+  if (btnDownloadAgentSettings) btnDownloadAgentSettings.addEventListener('click', downloadAgentHandler);
+  if (btnCopyAgentCode) btnCopyAgentCode.addEventListener('click', copyAgentCommandHandler);
+  if (btnCopyAgentCmd) btnCopyAgentCmd.addEventListener('click', copyAgentCommandHandler);
+
   function sendRemoteControlEvent(actionData) {
     if (!isRemoteControlActive) return;
     const payload = {
       type: 'remote-control',
+      id: Date.now() + '-' + Math.random().toString(36).substring(2, 7),
       ...actionData
     };
-    const sentP2P = webrtc ? webrtc.broadcastData(payload) : false;
-    if (!sentP2P && socket) {
-      socket.emit('remote-control', payload);
+
+    // 1. Siempre emitir por WebRTC DataChannel (para latencia ultrabaja en navegador)
+    if (webrtc) {
+      webrtc.broadcastData(payload);
+    }
+
+    // 2. Transmitir por Socket.io (para que el Asistente Nativo de Windows ejecute clics reales en el SO)
+    if (socket) {
+      if (actionData.type === 'move') {
+        const now = Date.now();
+        if (now - lastSocketMoveTime > 30) {
+          lastSocketMoveTime = now;
+          socket.emit('remote-control', payload);
+        }
+      } else {
+        // Clics físicos, rueda de scroll y pulsaciones de teclas se envían de inmediato
+        socket.emit('remote-control', payload);
+      }
     }
   }
 
@@ -790,6 +866,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Si el anfitrión no permite el control remoto, ignorar
     if (!userSettings.allowControl || (toggleHostAllowControl && !toggleHostAllowControl.checked)) {
       return;
+    }
+
+    // Deduplicación para evitar ejecutar dos veces si llega por WebRTC y WebSocket
+    if (data.id) {
+      if (seenRemoteControlEvents.has(data.id)) return;
+      seenRemoteControlEvents.add(data.id);
+      if (seenRemoteControlEvents.size > 200) {
+        const first = seenRemoteControlEvents.values().next().value;
+        seenRemoteControlEvents.delete(first);
+      }
     }
 
     const user = participants.get(senderId || data.senderId);
@@ -807,6 +893,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     isRemoteControlActive = !isRemoteControlActive;
 
     if (isRemoteControlActive) {
+      // Si el modo láser estaba activo, desactivarlo para evitar conflicto
+      if (laser && laser.isActive) {
+        laser.isActive = false;
+        btnToggleLaser.classList.remove('border-indigo-500/80', 'bg-indigo-950/40');
+        pointerModeIndicator.classList.add('hidden');
+      }
+
       btnToggleControl.classList.remove('bg-slate-800', 'text-slate-200');
       btnToggleControl.classList.add('bg-emerald-600', 'text-white', 'border-emerald-500/80');
       controlIcon.className = 'w-4 h-4 text-white animate-pulse';
@@ -836,6 +929,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!isRemoteControlActive || !laser) return;
     const coords = laser.normalizeCoords(e.clientX, e.clientY);
     if (coords.inside) {
+      laser.addRipple(coords.x, coords.y, '#10b981');
       sendRemoteControlEvent({ type: 'mousedown', button: e.button, x: coords.x, y: coords.y });
     }
   });
@@ -845,6 +939,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const coords = laser.normalizeCoords(e.clientX, e.clientY);
     if (coords.inside) {
       sendRemoteControlEvent({ type: 'mouseup', button: e.button, x: coords.x, y: coords.y });
+    }
+  });
+
+  laserCanvas.addEventListener('click', (e) => {
+    if (!isRemoteControlActive || !laser) return;
+    const coords = laser.normalizeCoords(e.clientX, e.clientY);
+    if (coords.inside) {
       sendRemoteControlEvent({ type: 'click', button: e.button, x: coords.x, y: coords.y });
     }
   });
@@ -853,6 +954,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!isRemoteControlActive || !laser) return;
     const coords = laser.normalizeCoords(e.clientX, e.clientY);
     if (coords.inside) {
+      laser.addRipple(coords.x, coords.y, '#10b981');
       sendRemoteControlEvent({ type: 'dblclick', button: e.button, x: coords.x, y: coords.y });
     }
   });
@@ -862,6 +964,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     e.preventDefault(); // Prevenir menú contextual del navegador
     const coords = laser.normalizeCoords(e.clientX, e.clientY);
     if (coords.inside) {
+      laser.addRipple(coords.x, coords.y, '#3b82f6');
       sendRemoteControlEvent({ type: 'contextmenu', button: 2, x: coords.x, y: coords.y });
     }
   });
@@ -968,8 +1071,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       myUser = user;
       updateParticipantsList(existingUsers);
 
+      const hasAgent = existingUsers.some((u) => u.isAgent || u.name === 'Windows-Native-Agent');
+      if (hasAgent) {
+        updateAgentStatusUI(true);
+      }
+
       existingUsers.forEach((existing) => {
-        if (existing.id !== socket.id) {
+        if (existing.id !== socket.id && !existing.isAgent && existing.name !== 'Windows-Native-Agent') {
           webrtc.createOffer(existing.id);
         }
       });
@@ -983,6 +1091,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     socket.on('user-connected', (user) => {
+      if (user.isAgent || user.name === 'Windows-Native-Agent') {
+        updateAgentStatusUI(true);
+        showToast('⚡ Asistente de Windows conectado: Clics físicos listos', 'success');
+        return;
+      }
+
       soundEffects.join();
       showToast(`${user.name} se conectó a la sesión`, 'info');
       participants.set(user.id, user);
@@ -1042,7 +1156,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
 
-    socket.on('user-disconnected', ({ userId, userName }) => {
+    socket.on('user-disconnected', ({ userId, userName, isAgent }) => {
+      if (isAgent || userName === 'Windows-Native-Agent') {
+        updateAgentStatusUI(false);
+        showToast('Asistente de Windows desconectado', 'info');
+        return;
+      }
       soundEffects.leave();
       showToast(`${userName} se desconectó`, 'info');
       if (webrtc) webrtc.closePeer(userId);
@@ -1230,7 +1349,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function updateParticipantsList(users) {
     participants.clear();
-    users.forEach((u) => participants.set(u.id, u));
+    users.forEach((u) => {
+      if (!u.isAgent && u.name !== 'Windows-Native-Agent') {
+        participants.set(u.id, u);
+      }
+    });
     renderParticipants();
   }
 
@@ -1388,6 +1511,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!laser) return;
     laser.isActive = !laser.isActive;
     if (laser.isActive) {
+      // Si el control remoto estaba activo, desactivarlo para evitar conflicto
+      if (isRemoteControlActive) {
+        isRemoteControlActive = false;
+        btnToggleControl.classList.add('bg-slate-800', 'text-slate-200');
+        btnToggleControl.classList.remove('bg-emerald-600', 'text-white', 'border-emerald-500/80');
+        controlIcon.className = 'w-4 h-4 text-slate-400';
+        remoteControlBanner.classList.add('hidden');
+      }
+
       btnToggleLaser.classList.add('border-indigo-500/80', 'bg-indigo-950/40');
       pointerModeIndicator.classList.remove('hidden');
     } else {
