@@ -1787,15 +1787,6 @@ document.addEventListener('DOMContentLoaded', async () => {
           sharerActiveCard.classList.add('hidden');
           videoWrapper.classList.remove('hidden');
 
-          // Asegurar el envío de la pantalla a todos los participantes en la sala
-          for (const peerId of participants.keys()) {
-            try {
-              await webrtc.shareScreenWithPeer(peerId);
-            } catch (e) {
-              console.warn(`Error al compartir pantalla con ${peerId}:`, e);
-            }
-          }
-
           socket.emit('screen-share-status', { isSharing: true, roomId: currentRoomId });
           showToast('Transmitiendo en vivo', 'success');
         }
@@ -2049,22 +2040,34 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const combinedStream = new MediaStream(combinedTracks);
 
-      // Selección de codec compatible
-      const candidateTypes = [
+      const hasAudio = combinedStream.getAudioTracks().length > 0;
+      const candidateTypes = hasAudio ? [
         'video/webm;codecs=vp9,opus',
         'video/webm;codecs=vp8,opus',
         'video/webm;codecs=h264,opus',
         'video/webm',
         'video/mp4;codecs=h264,aac',
         'video/mp4'
+      ] : [
+        'video/webm;codecs=vp9',
+        'video/webm;codecs=vp8',
+        'video/webm;codecs=h264',
+        'video/webm',
+        'video/mp4'
       ];
+
       let selectedMimeType = '';
       if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported) {
         selectedMimeType = candidateTypes.find((type) => MediaRecorder.isTypeSupported(type)) || '';
       }
 
       const recorderOptions = selectedMimeType ? { mimeType: selectedMimeType } : {};
-      mediaRecorder = new MediaRecorder(combinedStream, recorderOptions);
+      try {
+        mediaRecorder = new MediaRecorder(combinedStream, recorderOptions);
+      } catch (errRec) {
+        console.warn('Fallback a MediaRecorder básico:', errRec);
+        mediaRecorder = new MediaRecorder(combinedStream);
+      }
       recordedChunks = [];
 
       mediaRecorder.ondataavailable = (e) => {
@@ -2200,6 +2203,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     const playVideo = () => {
       screenVideo.play().catch((e) => console.warn('Error al reproducir video:', e));
+      updateScreenDisplay();
     };
     playVideo();
     screenVideo.onloadedmetadata = playVideo;

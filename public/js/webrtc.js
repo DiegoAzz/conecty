@@ -1,7 +1,7 @@
 /**
  * WebRTC Connection Manager
  * Implementación robusta con re-negociación automática (Perfect Negotiation)
- * para llamadas de voz y transmisión de pantalla dinámica.
+ * para llamadas de voz y transmisión de pantalla dinámica de alta fidelidad.
  */
 
 class WebRTCManager {
@@ -19,7 +19,7 @@ class WebRTCManager {
     this.onRemoteLeave = onRemoteLeave;
     this.onDataChannelMessage = onDataChannelMessage;
 
-    // socketId -> { pc, dataChannel, screenSenders: [], audioSender: null, pendingCandidates: [], makingOffer: false, ignoreOffer: false }
+    // socketId -> { pc, dataChannel, screenSenders: [], audioSender: null, pendingCandidates: [], makingOffer: false, ignoreOffer: false, isPolite: boolean }
     this.peers = new Map();
 
     this.localAudioStream = null;
@@ -87,7 +87,7 @@ class WebRTCManager {
       isPolite
     };
 
-    // Crear DataChannel para eventos del puntero láser
+    // Crear DataChannel para eventos del puntero láser y control remoto
     if (isInitiator) {
       try {
         peerObj.dataChannel = pc.createDataChannel('conecty-events', {
@@ -112,8 +112,8 @@ class WebRTCManager {
       });
     }
 
-    // Agregar tracks de pantalla locales si es el iniciador de la llamada
-    if (this.localScreenStream && isInitiator) {
+    // Agregar tracks de pantalla locales si ya se está compartiendo
+    if (this.localScreenStream) {
       this.localScreenStream.getTracks().forEach((track) => {
         try {
           const sender = pc.addTrack(track, this.localScreenStream);
@@ -178,32 +178,41 @@ class WebRTCManager {
       const targetFps = parseInt(fps, 10) || 60;
       let stream = null;
       try {
-        // audio: false es esencial en Windows/Chrome para permitir compartir Ventanas individuales sin errores de SO
         stream = await navigator.mediaDevices.getDisplayMedia({
           video: {
             cursor: 'always',
-            width: { ideal: 3840 },
-            height: { ideal: 2160 },
-            frameRate: { ideal: targetFps }
+            width: { ideal: 1920, max: 3840 },
+            height: { ideal: 1080, max: 2160 },
+            frameRate: { ideal: targetFps, max: 60 }
           },
-          audio: false
+          audio: true
         });
-      } catch (errCapture) {
-        console.warn('Reintento con captura básica nativa:', errCapture);
-        stream = await navigator.mediaDevices.getDisplayMedia({
-          video: {
-            cursor: 'always'
-          },
-          audio: false
-        });
+      } catch (errFallback) {
+        console.warn('Fallback a captura básica de pantalla:', errFallback);
+        try {
+          stream = await navigator.mediaDevices.getDisplayMedia({
+            video: {
+              cursor: 'always',
+              width: { ideal: 1920 },
+              height: { ideal: 1080 },
+              frameRate: { ideal: targetFps }
+            },
+            audio: false
+          });
+        } catch (errBasic) {
+          stream = await navigator.mediaDevices.getDisplayMedia({
+            video: true,
+            audio: false
+          });
+        }
       }
 
       this.localScreenStream = stream;
 
       const videoTrack = this.localScreenStream.getVideoTracks()[0];
       if (videoTrack && 'contentHint' in videoTrack) {
-        // 'detail' prioriza nitidez cristalina de textos, documentos y código sobre compresión agresiva
-        videoTrack.contentHint = 'detail';
+        // 'motion' garantiza flujo constante de 30-60 fps sin pausas ni pantallas negras
+        videoTrack.contentHint = 'motion';
       }
 
       videoTrack.onended = () => {
@@ -248,38 +257,36 @@ class WebRTCManager {
       }
     });
 
+    const triggerRenegotiate = async () => {
+      if (pc.signalingState === 'stable') {
+        await this.renegotiate(peerId);
+        // Optimizar parámetros de codificación de video (8 Mbps max para nitidez sin sobrecargar)
+        peerObj.screenSenders.forEach((sender) => {
+          if (sender.track && sender.track.kind === 'video' && sender.setParameters) {
+            try {
+              const params = sender.getParameters();
+              if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
+              params.encodings[0].maxBitrate = 8000000;
+              params.encodings[0].priority = 'high';
+              params.encodings[0].networkPriority = 'high';
+              sender.setParameters(params).catch(() => {});
+            } catch (e) {}
+          }
+        });
+      }
+    };
+
     if (pc.signalingState === 'stable') {
-      await this.renegotiate(peerId);
-      this.applySenderBitrates(peerObj);
+      await triggerRenegotiate();
     } else {
       const onStable = async () => {
         if (pc.signalingState === 'stable') {
           pc.removeEventListener('signalingstatechange', onStable);
-          await this.renegotiate(peerId);
-          this.applySenderBitrates(peerObj);
+          await triggerRenegotiate();
         }
       };
       pc.addEventListener('signalingstatechange', onStable);
     }
-  }
-
-  /**
-   * Aplica parámetros de encoding de alta fidelidad sin restricciones artificiales que congelen el stream
-   */
-  applySenderBitrates(peerObj) {
-    if (!peerObj || !peerObj.screenSenders) return;
-    peerObj.screenSenders.forEach((sender) => {
-      if (sender.track && sender.track.kind === 'video' && sender.setParameters) {
-        try {
-          const params = sender.getParameters();
-          if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
-          params.encodings[0].maxBitrate = 8000000; // 8 Mbps max para nitidez sin saturar
-          params.encodings[0].priority = 'high';
-          params.encodings[0].networkPriority = 'high';
-          sender.setParameters(params).catch(() => {});
-        } catch (e) {}
-      }
-    });
   }
 
   /**
@@ -315,20 +322,10 @@ class WebRTCManager {
   async renegotiate(peerId) {
     const peerObj = this.peers.get(peerId);
     if (!peerObj || !peerObj.pc) return;
-
     if (peerObj.pc.signalingState !== 'stable') {
       console.warn(`renegotiate con ${peerId} pospuesto: signalingState=${peerObj.pc.signalingState}`);
-      const retryOnStable = async () => {
-        if (peerObj.pc && peerObj.pc.signalingState === 'stable') {
-          peerObj.pc.removeEventListener('signalingstatechange', retryOnStable);
-          await this.renegotiate(peerId);
-          this.applySenderBitrates(peerObj);
-        }
-      };
-      peerObj.pc.addEventListener('signalingstatechange', retryOnStable);
       return;
     }
-
     try {
       peerObj.makingOffer = true;
       const offer = await peerObj.pc.createOffer();
@@ -369,16 +366,7 @@ class WebRTCManager {
     peerObj.ignoreOffer = !peerObj.isPolite && offerCollision;
 
     if (peerObj.ignoreOffer) {
-      console.warn('Colisión de oferta pospuesta por ser peer impolito:', callerId);
-      if (!peerObj.makingOffer && pc.signalingState !== 'stable') {
-        const queueOffer = async () => {
-          if (pc.signalingState === 'stable') {
-            pc.removeEventListener('signalingstatechange', queueOffer);
-            await this.handleOffer(callerId, offer);
-          }
-        };
-        pc.addEventListener('signalingstatechange', queueOffer);
-      }
+      console.warn('Colisión de oferta ignorada por ser peer impolito:', callerId);
       return;
     }
 
@@ -413,16 +401,18 @@ class WebRTCManager {
         }
       });
 
-      // Si tenemos pantalla activa, re-negociar para compartirla con este peer una vez completado el handshake inicial
+      // Si tenemos pantalla activa y no la tiene este peer, asegurar el envío una vez completado el handshake
       if (this.localScreenStream) {
         const checkAndShare = async () => {
           if (pc.signalingState === 'stable') {
             pc.removeEventListener('signalingstatechange', checkAndShare);
-            await this.shareScreenWithPeer(callerId);
+            if (peerObj.screenSenders.length === 0) {
+              await this.shareScreenWithPeer(callerId);
+            }
           }
         };
         if (pc.signalingState === 'stable') {
-          setTimeout(checkAndShare, 100);
+          setTimeout(checkAndShare, 50);
         } else {
           pc.addEventListener('signalingstatechange', checkAndShare);
         }
@@ -436,6 +426,7 @@ class WebRTCManager {
    * Maneja una respuesta SDP recibida
    */
   async handleAnswer(responderId, answer) {
+    if (!answer || !answer.sdp) return;
     const peerObj = this.peers.get(responderId);
     if (peerObj && peerObj.pc) {
       try {
@@ -454,9 +445,6 @@ class WebRTCManager {
           }
           peerObj.pendingCandidates = [];
         }
-
-        // Aplicar parámetros de calidad máxima (25 Mbps) una vez confirmado el canal
-        this.applySenderBitrates(peerObj);
 
         // Si tenemos pantalla activa y no la tiene este peer, enviarla ahora que el handshake es estable
         if (this.localScreenStream && peerObj.screenSenders.length === 0) {
