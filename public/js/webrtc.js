@@ -112,8 +112,12 @@ class WebRTCManager {
     // Agregar tracks de pantalla locales si ya se está compartiendo
     if (this.localScreenStream) {
       this.localScreenStream.getTracks().forEach((track) => {
-        const sender = pc.addTrack(track, this.localScreenStream);
-        peerObj.screenSenders.push(sender);
+        try {
+          const sender = pc.addTrack(track, this.localScreenStream);
+          peerObj.screenSenders.push(sender);
+        } catch (e) {
+          console.warn('Track de pantalla ya asignado:', e);
+        }
       });
     }
 
@@ -200,16 +204,42 @@ class WebRTCManager {
       };
 
       // Agregar los tracks de pantalla a todas las conexiones peer existentes
-      for (const [peerId, peerObj] of this.peers.entries()) {
-        const pc = peerObj.pc;
-        this.localScreenStream.getTracks().forEach((track) => {
+      for (const peerId of this.peers.keys()) {
+        await this.shareScreenWithPeer(peerId);
+      }
+
+      return this.localScreenStream;
+    } catch (err) {
+      console.warn('Captura de pantalla cancelada o rechazada:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Agrega los tracks de pantalla local a un peer específico y re-negocia
+   */
+  async shareScreenWithPeer(peerId) {
+    const peerObj = this.peers.get(peerId);
+    if (!peerObj || !peerObj.pc || !this.localScreenStream) return;
+    const pc = peerObj.pc;
+
+    const currentSenders = pc.getSenders();
+    this.localScreenStream.getTracks().forEach((track) => {
+      const alreadyAdded = currentSenders.some((s) => s.track && s.track.id === track.id);
+      if (!alreadyAdded) {
+        try {
           const sender = pc.addTrack(track, this.localScreenStream);
           peerObj.screenSenders.push(sender);
-        });
-        // Re-negociar explícitamente para transmitir el nuevo video
-        await this.renegotiate(peerId);
+        } catch (e) {
+          console.warn(`Error agregando track de pantalla al peer ${peerId}:`, e);
+        }
+      }
+    });
 
-        // Optimizar bitrate una vez negociado
+    const triggerRenegotiate = async () => {
+      if (pc.signalingState === 'stable') {
+        await this.renegotiate(peerId);
+        // Optimizar parámetros de codificación de video
         peerObj.screenSenders.forEach((sender) => {
           if (sender.track && sender.track.kind === 'video' && sender.setParameters) {
             try {
@@ -223,11 +253,18 @@ class WebRTCManager {
           }
         });
       }
+    };
 
-      return this.localScreenStream;
-    } catch (err) {
-      console.warn('Captura de pantalla cancelada o rechazada:', err);
-      return null;
+    if (pc.signalingState === 'stable') {
+      await triggerRenegotiate();
+    } else {
+      const onStable = async () => {
+        if (pc.signalingState === 'stable') {
+          pc.removeEventListener('signalingstatechange', onStable);
+          await triggerRenegotiate();
+        }
+      };
+      pc.addEventListener('signalingstatechange', onStable);
     }
   }
 
@@ -249,8 +286,9 @@ class WebRTCManager {
             }
           });
           peerObj.screenSenders = [];
-          // Re-negociar para actualizar el estado del peer remoto
-          await this.renegotiate(peerId);
+          if (pc.signalingState === 'stable') {
+            await this.renegotiate(peerId);
+          }
         }
       }
       this.localScreenStream = null;
@@ -263,6 +301,10 @@ class WebRTCManager {
   async renegotiate(peerId) {
     const peerObj = this.peers.get(peerId);
     if (!peerObj || !peerObj.pc) return;
+    if (peerObj.pc.signalingState !== 'stable') {
+      console.warn(`renegotiate con ${peerId} pospuesto: signalingState=${peerObj.pc.signalingState}`);
+      return;
+    }
     try {
       peerObj.makingOffer = true;
       const offer = await peerObj.pc.createOffer();
@@ -327,6 +369,23 @@ class WebRTCManager {
         targetId: callerId,
         answer: pc.localDescription
       });
+
+      // Si tenemos pantalla activa y no la tiene este peer, asegurar el envío una vez completado el handshake
+      if (this.localScreenStream) {
+        const checkAndShare = async () => {
+          if (pc.signalingState === 'stable') {
+            pc.removeEventListener('signalingstatechange', checkAndShare);
+            if (peerObj.screenSenders.length === 0) {
+              await this.shareScreenWithPeer(callerId);
+            }
+          }
+        };
+        if (pc.signalingState === 'stable') {
+          setTimeout(checkAndShare, 50);
+        } else {
+          pc.addEventListener('signalingstatechange', checkAndShare);
+        }
+      }
     } catch (err) {
       console.error('Error al manejar oferta SDP:', err);
     }
@@ -351,6 +410,11 @@ class WebRTCManager {
             }
           }
           peerObj.pendingCandidates = [];
+        }
+
+        // Si tenemos pantalla activa y no la tiene este peer, enviarla ahora que el handshake es estable
+        if (this.localScreenStream && peerObj.screenSenders.length === 0) {
+          await this.shareScreenWithPeer(responderId);
         }
       } catch (err) {
         console.error('Error aplicando respuesta SDP:', err);

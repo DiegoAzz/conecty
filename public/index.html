@@ -369,9 +369,13 @@
               <i data-lucide="screen-share-off" class="w-4 h-4"></i>
               <span>Detener Transmisión</span>
             </button>
-            <button id="btnTogglePipPreview" class="w-full sm:w-auto px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium rounded-xl border border-slate-700 flex items-center justify-center space-x-2 transition">
+            <button id="btnShowLiveStage" class="w-full sm:w-auto px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-xl shadow-lg shadow-indigo-600/30 flex items-center justify-center space-x-2 transition">
               <i data-lucide="eye" class="w-4 h-4"></i>
-              <span id="pipBtnText">Ver Miniatura</span>
+              <span>Ver Pantalla en Vivo</span>
+            </button>
+            <button id="btnTogglePipPreview" class="w-full sm:w-auto px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium rounded-xl border border-slate-700 flex items-center justify-center space-x-2 transition">
+              <i data-lucide="picture-in-picture" class="w-4 h-4"></i>
+              <span id="pipBtnText">Miniatura Flotante</span>
             </button>
           </div>
 
@@ -436,6 +440,12 @@
             <i data-lucide="monitor" class="w-3.5 h-3.5 text-indigo-400"></i>
             <span id="sharerNameText">Pantalla de: Usuario</span>
           </div>
+
+          <!-- Botón de Protección Anti-Espejo (Visible para quien comparte) -->
+          <button id="btnToggleMirrorShield" class="absolute top-4 left-64 z-20 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-xs text-amber-300 hover:text-amber-200 border border-amber-500/30 flex items-center space-x-1.5 shadow-lg transition hidden" title="Ocultar video para evitar efecto espejo si compartes toda la pantalla">
+            <i data-lucide="shield" class="w-3.5 h-3.5"></i>
+            <span>Ocultar (Anti-Espejo)</span>
+          </button>
 
           <!-- Banner de Estado de Modo Control Remoto -->
           <div id="remoteControlBanner" class="absolute top-16 left-4 z-20 px-3.5 py-1.5 rounded-xl glass-panel text-xs text-emerald-300 flex items-center space-x-2 border border-emerald-500/40 shadow-lg hidden">

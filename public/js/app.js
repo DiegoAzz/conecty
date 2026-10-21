@@ -144,6 +144,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Pestañas Multi-Pantalla
   const multiScreenTabsBar = document.getElementById('multiScreenTabsBar');
   const multiScreenTabs = document.getElementById('multiScreenTabs');
+  const btnToggleMirrorShield = document.getElementById('btnToggleMirrorShield');
+  const btnShowLiveStage = document.getElementById('btnShowLiveStage');
 
   // Panel Lateral de Participantes & Moderación
   const btnToggleParticipants = document.getElementById('btnToggleParticipants');
@@ -154,6 +156,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnMuteAllUsers = document.getElementById('btnMuteAllUsers');
   const btnRevokeControlAll = document.getElementById('btnRevokeControlAll');
   const revokeControlContainer = document.getElementById('revokeControlContainer');
+
+  // Estado Global de Moderación y Sala
+  let isHost = false;
+  let authorizedControllerId = null;
+  let isMyHandRaised = false;
 
   // ================= 1. GESTIÓN DE ID Y CONFIGURACIONES (ANYDESK STYLE) =================
   let myDeviceId = localStorage.getItem('conecty_device_id');
@@ -181,7 +188,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     soundEffects: true,
     screenFps: '60',
     defaultScale: 'contain',
-    antiMirror: true,
+    antiMirror: false, // Por defecto mostrar video en vivo siempre
     echoCancellation: true,
     noiseSuppression: true
   };
@@ -191,6 +198,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const saved = localStorage.getItem('conecty_settings');
     if (saved) {
       userSettings = { ...defaultSettings, ...JSON.parse(saved) };
+    }
+    // Migración transparente: asegurar que por defecto muestre el video en vivo
+    if (localStorage.getItem('conecty_antimirror_v2') !== 'true') {
+      userSettings.antiMirror = false;
+      localStorage.setItem('conecty_antimirror_v2', 'true');
+      localStorage.setItem('conecty_settings', JSON.stringify(userSettings));
     }
   } catch (e) {}
 
@@ -1340,7 +1353,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       renderParticipants();
     });
 
-    socket.on('user-connected', (user) => {
+    socket.on('user-connected', async (user) => {
       if (user.isAgent || user.name === 'Windows-Native-Agent') {
         updateAgentStatusUI(true);
         showToast('⚡ Asistente de Windows conectado: Clics físicos listos', 'success');
@@ -1353,12 +1366,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       renderParticipants();
 
       if (isSharingScreen && webrtc && webrtc.localScreenStream) {
-        const peerObj = webrtc.getOrCreatePeer(user.id, true);
-        webrtc.localScreenStream.getTracks().forEach((track) => {
-          const sender = peerObj.pc.addTrack(track, webrtc.localScreenStream);
-          peerObj.screenSenders.push(sender);
-        });
-        webrtc.renegotiate(user.id);
+        await webrtc.shareScreenWithPeer(user.id);
       }
     });
 
@@ -1532,6 +1540,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       pipBtnText.textContent = 'Ocultar Miniatura';
       if (webrtc && webrtc.localScreenStream) {
         pipVideo.srcObject = webrtc.localScreenStream;
+        pipVideo.play().catch(() => {});
       }
     } else {
       pipPreviewContainer.classList.add('hidden');
@@ -1541,60 +1550,49 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   btnStopShareCard.addEventListener('click', () => toggleScreenShare());
 
+  if (btnToggleMirrorShield) {
+    btnToggleMirrorShield.addEventListener('click', () => {
+      videoWrapper.classList.add('hidden');
+      sharerActiveCard.classList.remove('hidden');
+      showToast('Modo Anti-Espejo activado. Tu pantalla se sigue transmitiendo.', 'info');
+    });
+  }
+
+  if (btnShowLiveStage) {
+    btnShowLiveStage.addEventListener('click', () => {
+      sharerActiveCard.classList.add('hidden');
+      videoWrapper.classList.remove('hidden');
+      if (currentActiveScreenId && activeScreens.has(currentActiveScreenId)) {
+        selectActiveScreen(currentActiveScreenId);
+      } else if (webrtc && webrtc.localScreenStream) {
+        selectActiveScreen('local');
+      }
+    });
+  }
+
   function handleRemoteVideo(peerId, stream) {
     const user = participants.get(peerId);
-    sharerNameText.textContent = `Pantalla de: ${user ? user.name : 'Compañero'}`;
-
-    screenVideo.muted = true;
-    if ('latencyHint' in screenVideo) {
-      screenVideo.latencyHint = 0;
-    }
-    screenVideo.srcObject = stream;
-    screenVideo.play().catch((e) => console.warn('Error al reproducir video:', e));
-
-    registerActiveScreen(peerId, stream, user ? user.name : 'Compañero');
-    idleScreen.classList.add('hidden');
-    sharerActiveCard.classList.add('hidden');
-    videoWrapper.classList.remove('hidden');
-
-    currentZoom = 1.0;
-    currentFitMode = userSettings.defaultScale || 'contain';
-    updateScreenDisplay();
-
-    if (laser) {
-      laser.clearCanvas();
-      laser.resizeCanvas();
-    }
-    showToast(`Mostrando pantalla de ${user ? user.name : 'compañero'}`, 'success');
+    const userName = user ? user.name : 'Compañero';
+    registerActiveScreen(peerId, stream, userName);
+    selectActiveScreen(peerId);
+    showToast(`Mostrando pantalla de ${userName}`, 'success');
   }
 
   function checkScreenSharingState() {
-    let remoteSharing = false;
-    for (const user of participants.values()) {
-      if (user.isScreenSharing) {
-        remoteSharing = true;
-        break;
+    if (activeScreens.size > 0) {
+      if (!currentActiveScreenId || !activeScreens.has(currentActiveScreenId)) {
+        const nextId = activeScreens.keys().next().value;
+        selectActiveScreen(nextId);
       }
-    }
-
-    if (!remoteSharing) {
+    } else {
+      currentActiveScreenId = null;
       screenVideo.srcObject = null;
       videoWrapper.classList.add('hidden');
+      sharerActiveCard.classList.add('hidden');
+      if (btnToggleMirrorShield) btnToggleMirrorShield.classList.add('hidden');
+      idleScreen.classList.remove('hidden');
       if (laser) laser.clearCanvas();
-
-      if (isSharingScreen) {
-        if (userSettings.antiMirror) {
-          sharerActiveCard.classList.remove('hidden');
-          idleScreen.classList.add('hidden');
-        } else {
-          sharerActiveCard.classList.add('hidden');
-          idleScreen.classList.add('hidden');
-          videoWrapper.classList.remove('hidden');
-        }
-      } else {
-        sharerActiveCard.classList.add('hidden');
-        idleScreen.classList.remove('hidden');
-      }
+      if (multiScreenTabsBar) multiScreenTabsBar.classList.add('hidden');
     }
   }
 
@@ -1691,11 +1689,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       btnToggleScreen.classList.add('bg-indigo-600', 'hover:bg-indigo-500');
 
       sharerActiveCard.classList.add('hidden');
+      if (btnToggleMirrorShield) btnToggleMirrorShield.classList.add('hidden');
       pipPreviewContainer.classList.add('hidden');
       isPipOpen = false;
-      pipBtnText.textContent = 'Ver Miniatura';
+      pipBtnText.textContent = 'Miniatura Flotante';
       pipVideo.srcObject = null;
 
+      unregisterActiveScreen('local');
       socket.emit('screen-share-status', { isSharing: false });
       checkScreenSharingState();
       showToast('Dejaste de compartir pantalla', 'info');
@@ -1708,11 +1708,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         btnToggleScreen.classList.add('bg-indigo-600', 'hover:bg-indigo-500');
 
         sharerActiveCard.classList.add('hidden');
+        if (btnToggleMirrorShield) btnToggleMirrorShield.classList.add('hidden');
         pipPreviewContainer.classList.add('hidden');
         isPipOpen = false;
-        pipBtnText.textContent = 'Ver Miniatura';
+        pipBtnText.textContent = 'Miniatura Flotante';
         pipVideo.srcObject = null;
 
+        unregisterActiveScreen('local');
         socket.emit('screen-share-status', { isSharing: false });
         checkScreenSharingState();
       }, targetFps);
@@ -1723,14 +1725,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         btnToggleScreen.classList.remove('bg-indigo-600', 'hover:bg-indigo-500');
         btnToggleScreen.classList.add('bg-rose-600', 'hover:bg-rose-500');
 
+        registerActiveScreen('local', stream, 'Mi Pantalla (Tú)');
+        selectActiveScreen('local');
+
         if (userSettings.antiMirror) {
-          idleScreen.classList.add('hidden');
           videoWrapper.classList.add('hidden');
           sharerActiveCard.classList.remove('hidden');
         }
 
         socket.emit('screen-share-status', { isSharing: true });
-        showToast('Transmitiendo en vivo' + (userSettings.antiMirror ? ' (Modo Anti-Espejo activo)' : ''), 'success');
+        showToast('Transmitiendo en vivo', 'success');
       }
     }
     renderParticipants();
@@ -2021,12 +2025,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!screenData) return;
 
     currentActiveScreenId = id;
+    screenVideo.muted = true;
+    if ('latencyHint' in screenVideo) {
+      screenVideo.latencyHint = 0;
+    }
     screenVideo.srcObject = screenData.stream;
-    sharerNameText.textContent = 'Pantalla de: ' + screenData.userName;
+    screenVideo.play().catch((e) => console.warn('Error al reproducir video:', e));
+
+    if (id === 'local') {
+      sharerNameText.innerHTML = `
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse inline-block mr-1"></span>
+        <span>Transmitiendo: Mi Pantalla (En vivo)</span>
+      `;
+      if (btnToggleMirrorShield) btnToggleMirrorShield.classList.remove('hidden');
+    } else {
+      sharerNameText.textContent = 'Pantalla de: ' + screenData.userName;
+      if (btnToggleMirrorShield) btnToggleMirrorShield.classList.add('hidden');
+    }
 
     idleScreen.classList.add('hidden');
     sharerActiveCard.classList.add('hidden');
     videoWrapper.classList.remove('hidden');
+
+    currentZoom = 1.0;
+    currentFitMode = userSettings.defaultScale || 'contain';
+    updateScreenDisplay();
 
     if (laser) {
       laser.clearCanvas();
@@ -2034,6 +2057,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     renderMultiScreenTabs();
+    if (window.lucide) lucide.createIcons();
   }
 
   function renderMultiScreenTabs() {
@@ -2067,10 +2091,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
   // ================= MODERACIÓN Y PANEL DE PARTICIPANTES (ESTILO GOOGLE MEET) =================
-  let isHost = false;
-  let authorizedControllerId = null;
-  let isMyHandRaised = false;
-
   const headerHandNotice = document.getElementById('headerHandNotice');
   const headerHandText = document.getElementById('headerHandText');
 
