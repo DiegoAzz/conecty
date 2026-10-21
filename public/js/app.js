@@ -149,6 +149,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnVideoControlAction = document.getElementById('btnVideoControlAction');
   const btnVideoControlText = document.getElementById('btnVideoControlText');
   const btnVideoControlIcon = document.getElementById('btnVideoControlIcon');
+  const videoControlDropdown = document.getElementById('videoControlDropdown');
 
   // Panel Lateral de Participantes & Moderación
   const btnToggleParticipants = document.getElementById('btnToggleParticipants');
@@ -928,6 +929,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
           } else if (data.type === 'remote-control') {
             handleIncomingRemoteControl(data, peerId);
+          } else if (data.type === 'mouse-control-changed') {
+            applyMouseControlChanged(data.authorizedUserId, data.authorizedUserName);
           }
         }
       });
@@ -1289,33 +1292,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     socket.on('mouse-control-changed', ({ authorizedUserId, authorizedUserName }) => {
-      authorizedControllerId = authorizedUserId;
-      if (authorizedUserId === socket.id) {
-        isRemoteControlActive = true;
-        btnToggleControl.classList.remove('bg-slate-800');
-        btnToggleControl.classList.add('bg-emerald-600', 'hover:bg-emerald-500', 'text-white');
-        if (remoteControlBanner) {
-          remoteControlBanner.classList.remove('hidden');
-          remoteControlBannerText.textContent = '🎮 Control Remoto Activo: Puedes interactuar con el mouse y teclado';
-        }
-        showToast('🎮 ¡El moderador te ha otorgado el control del ratón y teclado!', 'success');
-      } else {
-        if (!isHost) {
-          isRemoteControlActive = false;
-          btnToggleControl.classList.remove('bg-emerald-600', 'hover:bg-emerald-500', 'text-white');
-          btnToggleControl.classList.add('bg-slate-800');
-          if (remoteControlBanner) {
-            if (authorizedUserId) {
-              remoteControlBanner.classList.remove('hidden');
-              remoteControlBannerText.textContent = 'Control asignado a: ' + authorizedUserName;
-            } else {
-              remoteControlBanner.classList.add('hidden');
-            }
-          }
-        }
-      }
-      renderParticipantsDrawer();
-      updateVideoControlButton();
+      applyMouseControlChanged(authorizedUserId, authorizedUserName);
     });
 
     socket.on('force-mute', () => {
@@ -1403,10 +1380,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (user) {
         user.isScreenSharing = isSharing;
       }
-      renderParticipants();
       if (!isSharing) {
-        checkScreenSharingState();
+        unregisterActiveScreen(userId);
       }
+      renderParticipants();
+      checkScreenSharingState();
     });
 
     socket.on('new-message', (msg) => {
@@ -1579,12 +1557,28 @@ document.addEventListener('DOMContentLoaded', async () => {
   function handleRemoteVideo(peerId, stream) {
     const user = participants.get(peerId);
     const userName = user ? user.name : 'Compañero';
+
+    // Limpiar automáticamente cuando el track de video remoto finalice
+    stream.getVideoTracks().forEach((track) => {
+      track.onended = () => {
+        unregisterActiveScreen(peerId);
+      };
+    });
+
     registerActiveScreen(peerId, stream, userName);
     selectActiveScreen(peerId);
     showToast(`Mostrando pantalla de ${userName}`, 'success');
   }
 
   function checkScreenSharingState() {
+    // Purgar de activeScreens cualquier stream que no tenga tracks vivos
+    for (const [id, sData] of activeScreens.entries()) {
+      if (!sData.stream || sData.stream.getVideoTracks().length === 0 || sData.stream.getVideoTracks().every((t) => t.readyState === 'ended')) {
+        activeScreens.delete(id);
+      }
+    }
+    renderMultiScreenTabs();
+
     if (activeScreens.size > 0) {
       if (!currentActiveScreenId || !activeScreens.has(currentActiveScreenId)) {
         const nextId = activeScreens.keys().next().value;
@@ -1592,7 +1586,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     } else {
       currentActiveScreenId = null;
-      screenVideo.srcObject = null;
+      if (screenVideo) {
+        screenVideo.srcObject = null;
+      }
       videoWrapper.classList.add('hidden');
       sharerActiveCard.classList.add('hidden');
       if (btnToggleMirrorShield) btnToggleMirrorShield.classList.add('hidden');
@@ -1600,12 +1596,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (laser) laser.clearCanvas();
       if (multiScreenTabsBar) multiScreenTabsBar.classList.add('hidden');
     }
+    updateVideoControlButton();
   }
 
   function updateParticipantsList(users) {
     participants.clear();
     users.forEach((u) => {
-      if (!u.isAgent && u.name !== 'Windows-Native-Agent') {
+      if (!u.isAgent && u.name !== 'Windows-Native-Agent' && u.id !== socket.id) {
         participants.set(u.id, u);
       }
     });
@@ -2148,10 +2145,52 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (btnToggleParticipantsDock) btnToggleParticipantsDock.addEventListener('click', toggleParticipantsSidebar);
   if (btnCloseParticipants) btnCloseParticipants.addEventListener('click', toggleParticipantsSidebar);
 
+  function applyMouseControlChanged(authorizedUserId, authorizedUserName) {
+    authorizedControllerId = authorizedUserId;
+    const isMe = (authorizedUserId === socket.id);
+
+    if (isMe) {
+      isRemoteControlActive = true;
+      btnToggleControl.classList.remove('bg-slate-800');
+      btnToggleControl.classList.add('bg-emerald-600', 'hover:bg-emerald-500', 'text-white');
+      if (laserCanvas) {
+        laserCanvas.style.cursor = 'default';
+      }
+      if (remoteControlBanner) {
+        remoteControlBanner.classList.remove('hidden');
+        remoteControlBannerText.textContent = '🎮 ¡Tienes el control interactivo! Mueve el ratón y haz clic sobre la pantalla';
+      }
+      soundEffects.testChime();
+      showToast('🎮 ¡Tienes el control interactivo del ratón y teclado!', 'success');
+    } else {
+      const canModerate = isHost || isSharingScreen;
+      if (!canModerate) {
+        isRemoteControlActive = false;
+        btnToggleControl.classList.remove('bg-emerald-600', 'hover:bg-emerald-500', 'text-white');
+        btnToggleControl.classList.add('bg-slate-800');
+        if (laserCanvas) {
+          laserCanvas.style.cursor = 'crosshair';
+        }
+        if (remoteControlBanner) {
+          if (authorizedUserId) {
+            remoteControlBanner.classList.remove('hidden');
+            remoteControlBannerText.textContent = 'Control asignado a: ' + (authorizedUserName || 'Usuario');
+          } else {
+            remoteControlBanner.classList.add('hidden');
+          }
+        }
+      }
+    }
+
+    renderParticipantsDrawer();
+    updateVideoControlButton();
+  }
+
   function updateVideoControlButton() {
     if (!btnVideoControlAction || !btnVideoControlText) return;
+    const canModerate = isHost || isSharingScreen;
 
-    if (isHost) {
+    if (canModerate) {
       if (authorizedControllerId) {
         const controllerUser = participants.get(authorizedControllerId);
         const name = controllerUser ? controllerUser.name : 'Usuario';
@@ -2165,46 +2204,110 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     } else {
       if (authorizedControllerId === socket.id) {
-        btnVideoControlAction.className = 'px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-600/30 flex items-center space-x-1.5 transition ml-1';
-        btnVideoControlText.textContent = isRemoteControlActive ? '🎮 Ratón Activo' : '🎮 Activar Ratón';
+        btnVideoControlAction.className = 'px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-600/30 flex items-center space-x-1.5 transition ml-1 animate-pulse';
+        btnVideoControlText.textContent = '🎮 Control Activo (Tú)';
         if (btnVideoControlIcon) btnVideoControlIcon.setAttribute('data-lucide', 'gamepad-2');
       } else {
         btnVideoControlAction.className = 'px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 flex items-center space-x-1.5 transition ml-1';
-        btnVideoControlText.textContent = '🎮 Pedir Control';
-        if (btnVideoControlIcon) btnVideoControlIcon.setAttribute('data-lucide', 'gamepad-2');
+        btnVideoControlText.textContent = isMyHandRaised ? '✋ Mano Alzada' : '🎮 Pedir Control';
+        if (btnVideoControlIcon) btnVideoControlIcon.setAttribute('data-lucide', isMyHandRaised ? 'hand' : 'gamepad-2');
       }
     }
     if (window.lucide) lucide.createIcons();
   }
 
+  function showVideoControlDropdown(remoteUsers) {
+    if (!videoControlDropdown) return;
+    const isHidden = videoControlDropdown.classList.contains('hidden');
+    if (!isHidden) {
+      videoControlDropdown.classList.add('hidden');
+      return;
+    }
+
+    videoControlDropdown.innerHTML = `
+      <div class="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800/80 mb-1 flex items-center justify-between">
+        <span>Ceder control a:</span>
+        <span class="text-emerald-400 font-mono">${remoteUsers.length}</span>
+      </div>
+    `;
+
+    remoteUsers.forEach((u) => {
+      const btn = document.createElement('button');
+      btn.className = 'w-full py-2 px-2.5 rounded-xl text-xs font-medium text-slate-200 hover:text-white bg-slate-800/60 hover:bg-emerald-600 flex items-center justify-between transition group';
+      btn.innerHTML = `
+        <div class="flex items-center space-x-2 truncate">
+          <div class="w-6 h-6 rounded-lg bg-emerald-600/30 text-emerald-300 group-hover:bg-white/20 group-hover:text-white flex items-center justify-center font-bold text-[10px] shrink-0">
+            ${escapeHtml(u.name.substring(0, 2).toUpperCase())}
+          </div>
+          <span class="truncate font-semibold">${escapeHtml(u.name)}</span>
+        </div>
+        <i data-lucide="chevron-right" class="w-3.5 h-3.5 text-slate-400 group-hover:text-white shrink-0 ml-1"></i>
+      `;
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        grantMouseControlTo(u.id);
+        videoControlDropdown.classList.add('hidden');
+      });
+      videoControlDropdown.appendChild(btn);
+    });
+
+    const btnOpenSide = document.createElement('button');
+    btnOpenSide.className = 'w-full pt-1.5 pb-1 px-2 text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold border-t border-slate-800/80 text-center transition flex items-center justify-center space-x-1';
+    btnOpenSide.innerHTML = `
+      <i data-lucide="users" class="w-3 h-3"></i>
+      <span>Ver panel de participantes</span>
+    `;
+    btnOpenSide.addEventListener('click', (e) => {
+      e.stopPropagation();
+      videoControlDropdown.classList.add('hidden');
+      if (participantsSidebar && participantsSidebar.classList.contains('hidden')) {
+        toggleParticipantsSidebar();
+      }
+    });
+    videoControlDropdown.appendChild(btnOpenSide);
+
+    videoControlDropdown.classList.remove('hidden');
+    if (window.lucide) lucide.createIcons();
+  }
+
+  // Cerrar menú flotante al hacer clic fuera
+  document.addEventListener('click', (e) => {
+    if (videoControlDropdown && !videoControlDropdown.classList.contains('hidden')) {
+      if (!videoControlDropdown.contains(e.target) && e.target !== btnVideoControlAction) {
+        videoControlDropdown.classList.add('hidden');
+      }
+    }
+  });
+
   if (btnVideoControlAction) {
-    btnVideoControlAction.addEventListener('click', () => {
-      if (isHost) {
+    btnVideoControlAction.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const canModerate = isHost || isSharingScreen;
+
+      if (canModerate) {
         if (authorizedControllerId) {
           revokeAllMouseControl();
-          showToast('🚫 Control de ratón revocado a todos', 'info');
         } else {
-          // Si hay 1 participante en la sala, cederle a él directamente
-          if (participants.size === 1) {
-            const targetUser = participants.values().next().value;
-            grantMouseControlTo(targetUser.id);
-            showToast(`🎮 ¡Le cediste el control del ratón a ${targetUser.name}!`, 'success');
-          } else if (participants.size > 1) {
-            // Abrir la barra de participantes para que elija a quién
-            if (participantsSidebar && participantsSidebar.classList.contains('hidden')) {
-              toggleParticipantsSidebar();
-            }
-            showToast('Selecciona a qué usuario ceder el control en la lista lateral', 'info');
+          const remoteUsers = Array.from(participants.values()).filter((u) => u.id !== socket.id);
+          if (remoteUsers.length === 0) {
+            showToast('Espera a que otro participante se una a la sala para cederle el control', 'info');
+          } else if (remoteUsers.length === 1) {
+            grantMouseControlTo(remoteUsers[0].id);
           } else {
-            showToast('Espera a que otro usuario se una a la sala para cederle el control', 'info');
+            showVideoControlDropdown(remoteUsers);
           }
         }
       } else {
         // Invitado
         if (authorizedControllerId === socket.id) {
-          btnToggleControl.click();
+          if (socket) socket.emit('release-mouse-control');
+          applyMouseControlChanged(null, null);
+          showToast('Soltaste el control del ratón', 'info');
         } else {
-          socket.emit('toggle-raise-hand');
+          const newState = true;
+          updateMyHandUI(newState);
+          if (socket) socket.emit('toggle-raise-hand', { isRaised: newState });
+          soundEffects.handRaised();
           showToast('✋ Alzaste la mano para solicitar la palabra y control de ratón', 'info');
         }
       }
@@ -2213,17 +2316,42 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function grantMouseControlTo(targetUserId) {
+    authorizedControllerId = targetUserId;
+    const targetUser = participants.get(targetUserId);
+    const name = targetUser ? targetUser.name : 'Usuario';
+
+    updateVideoControlButton();
+    renderParticipantsDrawer();
+
     if (socket) {
       socket.emit('grant-mouse-control', { targetUserId });
     }
-    updateVideoControlButton();
+    if (webrtc) {
+      webrtc.broadcastData({
+        type: 'mouse-control-changed',
+        authorizedUserId: targetUserId,
+        authorizedUserName: name
+      });
+    }
+    showToast(`🎮 ¡Control de ratón y teclado cedido a ${name}!`, 'success');
   }
 
   function revokeAllMouseControl() {
+    authorizedControllerId = null;
+    updateVideoControlButton();
+    renderParticipantsDrawer();
+
     if (socket) {
       socket.emit('revoke-mouse-control');
     }
-    updateVideoControlButton();
+    if (webrtc) {
+      webrtc.broadcastData({
+        type: 'mouse-control-changed',
+        authorizedUserId: null,
+        authorizedUserName: null
+      });
+    }
+    showToast('🚫 Control de ratón revocado a todos', 'info');
   }
 
   if (btnRevokeControlAll) btnRevokeControlAll.addEventListener('click', revokeAllMouseControl);
@@ -2239,9 +2367,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Tecla Escape para revocar control de inmediato
   window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && isHost && authorizedControllerId) {
+    const canModerate = isHost || isSharingScreen;
+    if (e.key === 'Escape' && canModerate && authorizedControllerId) {
       revokeAllMouseControl();
-      showToast('🚫 Control revocado (tecla Esc)', 'info');
     }
   });
 
@@ -2274,11 +2402,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
 
+    const canModerate = isHost || isSharingScreen;
     // Alternar cajas de moderador vs invitado
     const modBox = document.getElementById('moderatorControlBox');
     const guestBox = document.getElementById('participantGuestBox');
     if (modBox && guestBox) {
-      if (isHost) {
+      if (canModerate) {
         modBox.classList.remove('hidden');
         guestBox.classList.add('hidden');
       } else {
@@ -2429,8 +2558,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
           </div>
 
-          <!-- Acciones de Moderador Visibles Directamente para el Host -->
-          ${isHost ? `
+          <!-- Acciones de Moderador Visibles Directamente para el Host o Quien Comparte -->
+          ${canModerate ? `
             <div class="mt-2.5 pt-2 border-t border-slate-800/80 flex flex-col space-y-1.5 z-20">
               <button class="btn-ctrl-user w-full py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5 shadow-md ${
                 hasControl
@@ -2460,7 +2589,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           ` : ''}
         `;
 
-        if (isHost) {
+        if (canModerate) {
           const btnCtrl = item.querySelector('.btn-ctrl-user');
           if (btnCtrl) {
             btnCtrl.addEventListener('click', () => {

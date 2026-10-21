@@ -305,6 +305,15 @@ class WebRTCManager {
   }
 
   /**
+   * Modifica el SDP para forzar bitrate de 25 Mbps en video (alta resolución nítida sin compresión borrosa)
+   */
+  boostVideoBitrateInSdp(sdp) {
+    if (!sdp || !sdp.includes('m=video')) return sdp;
+    let clean = sdp.replace(/b=(AS|TIAS):[^\r\n]*\r\n/g, '');
+    return clean.replace(/(m=video[^\r\n]*\r\n)/g, '$1b=AS:25000\r\nb=TIAS:25000000\r\n');
+  }
+
+  /**
    * Re-negociación SDP para enviar actualizaciones de tracks
    */
   async renegotiate(peerId) {
@@ -317,10 +326,7 @@ class WebRTCManager {
     try {
       peerObj.makingOffer = true;
       const offer = await peerObj.pc.createOffer();
-      let sdp = offer.sdp;
-      if (sdp && sdp.includes('m=video')) {
-        sdp = sdp.replace(/a=mid:video\r\n/g, 'a=mid:video\r\nb=AS:25000\r\nb=TIAS:25000000\r\n');
-      }
+      const sdp = this.boostVideoBitrateInSdp(offer.sdp);
       await peerObj.pc.setLocalDescription(new RTCSessionDescription({ type: offer.type, sdp }));
       this.socket.emit('offer', {
         targetId: peerId,
@@ -376,10 +382,7 @@ class WebRTCManager {
       }
 
       const answer = await pc.createAnswer();
-      let sdp = answer.sdp;
-      if (sdp && sdp.includes('m=video')) {
-        sdp = sdp.replace(/a=mid:video\r\n/g, 'a=mid:video\r\nb=AS:25000\r\nb=TIAS:25000000\r\n');
-      }
+      const sdp = this.boostVideoBitrateInSdp(answer.sdp);
       await pc.setLocalDescription(new RTCSessionDescription({ type: answer.type, sdp }));
 
       this.socket.emit('answer', {

@@ -528,6 +528,18 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Usuario cede voluntariamente el control que tenía asignado
+  socket.on('release-mouse-control', () => {
+    if (currentRoom) {
+      roomAuthorizedControllers.delete(currentRoom);
+      io.to(currentRoom).emit('mouse-control-changed', {
+        authorizedUserId: null,
+        authorizedUserName: null,
+        granterId: socket.id
+      });
+    }
+  });
+
   // Evento de Control Remoto de Ratón y Teclado (con filtro estricto de moderador)
   socket.on('remote-control', (data) => {
     if (currentRoom) {
