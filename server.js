@@ -426,17 +426,27 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Estado de pantalla compartida
-  socket.on('screen-share-status', ({ isSharing }) => {
-    if (currentRoom && rooms.has(currentRoom)) {
-      const user = rooms.get(currentRoom).get(socket.id);
-      if (user) {
-        user.isScreenSharing = isSharing;
-        io.to(currentRoom).emit('user-screen-updated', {
-          userId: socket.id,
-          isSharing
-        });
+  // Estado de pantalla compartida con soporte para roomId explícito y reintento resiliente
+  socket.on('screen-share-status', ({ isSharing, roomId }) => {
+    const targetRoom = roomId || currentRoom;
+    if (targetRoom) {
+      if (rooms.has(targetRoom)) {
+        const user = rooms.get(targetRoom).get(socket.id);
+        if (user) {
+          user.isScreenSharing = Boolean(isSharing);
+        }
       }
+      io.to(targetRoom).emit('user-screen-updated', {
+        userId: socket.id,
+        isSharing: Boolean(isSharing)
+      });
+    }
+  });
+
+  // Re-negociación activa de pantalla (cuando un espectador detecta que alguien comparte pero aún no recibe el track)
+  socket.on('request-screen-renegotiation', ({ sharerId }) => {
+    if (sharerId) {
+      io.to(sharerId).emit('request-screen-renegotiation', { requesterId: socket.id });
     }
   });
 

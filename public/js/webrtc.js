@@ -416,10 +416,20 @@ class WebRTCManager {
   async renegotiate(peerId) {
     const peerObj = this.peers.get(peerId);
     if (!peerObj || !peerObj.pc) return;
+
     if (peerObj.pc.signalingState !== 'stable') {
       console.warn(`renegotiate con ${peerId} pospuesto: signalingState=${peerObj.pc.signalingState}`);
+      const retryOnStable = async () => {
+        if (peerObj.pc && peerObj.pc.signalingState === 'stable') {
+          peerObj.pc.removeEventListener('signalingstatechange', retryOnStable);
+          await this.renegotiate(peerId);
+          this.applySenderBitrates(peerObj);
+        }
+      };
+      peerObj.pc.addEventListener('signalingstatechange', retryOnStable);
       return;
     }
+
     try {
       peerObj.makingOffer = true;
       const offer = await peerObj.pc.createOffer();
@@ -431,9 +441,14 @@ class WebRTCManager {
         console.warn('Fallback a SDP original en oferta:', sdpErr);
         await peerObj.pc.setLocalDescription(offer);
       }
+
+      const localDesc = peerObj.pc.localDescription;
       this.socket.emit('offer', {
         targetId: peerId,
-        offer: peerObj.pc.localDescription
+        offer: {
+          type: localDesc.type,
+          sdp: localDesc.sdp
+        }
       });
     } catch (err) {
       console.error(`Error al re-negociar con ${peerId}:`, err);
@@ -455,6 +470,7 @@ class WebRTCManager {
    * Maneja una oferta SDP recibida (con soporte de Perfect Negotiation)
    */
   async handleOffer(callerId, offer) {
+    if (!offer || !offer.sdp) return;
     const peerObj = this.getOrCreatePeer(callerId, false);
     const pc = peerObj.pc;
     this.preferHighQualityCodecs(pc);
@@ -463,7 +479,16 @@ class WebRTCManager {
     peerObj.ignoreOffer = !peerObj.isPolite && offerCollision;
 
     if (peerObj.ignoreOffer) {
-      console.warn('Colisión de oferta ignorada por ser peer impolito:', callerId);
+      console.warn('Colisión de oferta pospuesta por ser peer impolito:', callerId);
+      if (!peerObj.makingOffer && pc.signalingState !== 'stable') {
+        const queueOffer = async () => {
+          if (pc.signalingState === 'stable') {
+            pc.removeEventListener('signalingstatechange', queueOffer);
+            await this.handleOffer(callerId, offer);
+          }
+        };
+        pc.addEventListener('signalingstatechange', queueOffer);
+      }
       return;
     }
 
@@ -496,9 +521,13 @@ class WebRTCManager {
         await pc.setLocalDescription(answer);
       }
 
+      const localDesc = pc.localDescription;
       this.socket.emit('answer', {
         targetId: callerId,
-        answer: pc.localDescription
+        answer: {
+          type: localDesc.type,
+          sdp: localDesc.sdp
+        }
       });
 
       // Si tenemos pantalla activa, re-negociar para compartirla con este peer una vez completado el handshake inicial

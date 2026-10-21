@@ -740,6 +740,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   socket.on('connect', () => {
     registerMyDeviceOnServer();
     measureLatency();
+    if (currentRoomId) {
+      console.log('🔄 Re-uniéndose a la sala tras reconexión del socket:', currentRoomId);
+      const name = userNameInput.value.trim() || ('Usuario-' + myDeviceId.substring(0, 4));
+      socket.emit('join-room', {
+        roomId: currentRoomId,
+        userName: name,
+        deviceId: myDeviceId
+      });
+    }
   });
 
   userNameInput.addEventListener('input', () => {
@@ -962,6 +971,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (audioStream) {
           showToast('🎙️ Micrófono listo y llamada de voz activa', 'success');
           monitorLocalVoice(audioStream);
+          // Adjuntar track de audio a los peers ya conectados que aún no lo tengan
+          for (const [peerId, peerObj] of webrtc.peers.entries()) {
+            if (peerObj.pc && !peerObj.audioSender) {
+              audioStream.getAudioTracks().forEach((track) => {
+                peerObj.audioSender = peerObj.pc.addTrack(track, audioStream);
+              });
+              if (peerObj.pc.signalingState === 'stable') {
+                webrtc.renegotiate(peerId);
+              }
+            }
+          }
         } else {
           showToast('⚠️ No se detectó micrófono. Podrás escuchar la llamada.', 'info');
         }
@@ -1351,6 +1371,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       participants.set(user.id, user);
       renderParticipants();
 
+      if (webrtc) {
+        webrtc.getOrCreatePeer(user.id, false);
+      }
+
       if (isSharingScreen && webrtc && webrtc.localScreenStream) {
         await webrtc.shareScreenWithPeer(user.id);
       }
@@ -1368,6 +1392,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (webrtc) await webrtc.handleCandidate(senderId, candidate);
     });
 
+    // Re-negociación proactiva de pantalla cuando un espectador la solicita
+    socket.on('request-screen-renegotiation', async ({ requesterId }) => {
+      if (isSharingScreen && webrtc && webrtc.localScreenStream && requesterId) {
+        console.log(`📡 Solicitud de pantalla recibida de ${requesterId}, re-transmitiendo...`);
+        await webrtc.shareScreenWithPeer(requesterId);
+      }
+    });
+
     socket.on('laser-pointer', (data) => {
       if (laser && userSettings.allowLaser) {
         laser.handleRemotePointer(data);
@@ -1381,10 +1413,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     socket.on('user-screen-updated', ({ userId, isSharing }) => {
       const user = participants.get(userId);
       if (user) {
-        user.isScreenSharing = isSharing;
+        user.isScreenSharing = Boolean(isSharing);
       }
       if (!isSharing) {
         unregisterActiveScreen(userId);
+      } else {
+        // Si el usuario remoto comenzó a transmitir pantalla pero después de 1 segundo
+        // aún no se ha recibido el stream de video, solicitar la re-negociación automáticamente
+        setTimeout(() => {
+          if (!activeScreens.has(userId) && user && user.isScreenSharing) {
+            console.log(`📡 Solicitando re-negociación proactiva de pantalla a ${userId}...`);
+            socket.emit('request-screen-renegotiation', { sharerId: userId });
+          }
+        }, 1200);
       }
       renderParticipants();
       checkScreenSharingState();
@@ -1710,7 +1751,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         pipVideo.srcObject = null;
 
         unregisterActiveScreen('local');
-        socket.emit('screen-share-status', { isSharing: false });
+        socket.emit('screen-share-status', { isSharing: false, roomId: currentRoomId });
         checkScreenSharingState();
         showToast('Dejaste de compartir pantalla', 'info');
       } else {
@@ -1729,7 +1770,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           pipVideo.srcObject = null;
 
           unregisterActiveScreen('local');
-          socket.emit('screen-share-status', { isSharing: false });
+          socket.emit('screen-share-status', { isSharing: false, roomId: currentRoomId });
           checkScreenSharingState();
         }, targetFps);
 
@@ -1742,11 +1783,20 @@ document.addEventListener('DOMContentLoaded', async () => {
           registerActiveScreen('local', stream, 'Mi Pantalla (Tú)');
           selectActiveScreen('local');
 
-          // Mostrar video en vivo directamente (si el usuario desea ocultarlo para evitar espejo, usa el botón flotante)
+          // Mostrar video en vivo directamente
           sharerActiveCard.classList.add('hidden');
           videoWrapper.classList.remove('hidden');
 
-          socket.emit('screen-share-status', { isSharing: true });
+          // Asegurar el envío de la pantalla a todos los participantes en la sala
+          for (const peerId of participants.keys()) {
+            try {
+              await webrtc.shareScreenWithPeer(peerId);
+            } catch (e) {
+              console.warn(`Error al compartir pantalla con ${peerId}:`, e);
+            }
+          }
+
+          socket.emit('screen-share-status', { isSharing: true, roomId: currentRoomId });
           showToast('Transmitiendo en vivo', 'success');
         }
       }
