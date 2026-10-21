@@ -710,7 +710,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   let iceServers = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun.cloudflare.com:3478' }
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: 'stun:global.stun.twilio.com:3478' },
+    { urls: 'stun:stun.services.mozilla.com:3478' }
   ];
   try {
     const configRes = await fetch('/api/config');
@@ -1558,11 +1561,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     const user = participants.get(peerId);
     const userName = user ? user.name : 'Compañero';
 
-    // Limpiar automáticamente cuando el track de video remoto finalice
+    // Limpiar automáticamente cuando el track de video remoto finalice o reproduzca al desmutear
     stream.getVideoTracks().forEach((track) => {
       track.onended = () => {
         unregisterActiveScreen(peerId);
       };
+      track.addEventListener('unmute', () => {
+        if (screenVideo && screenVideo.srcObject) {
+          screenVideo.play().catch(() => {});
+        }
+      });
     });
 
     registerActiveScreen(peerId, stream, userName);
@@ -1681,30 +1689,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Compartir Pantalla con Ajustes de FPS y Anti-Espejo
+  let isTogglingScreenShare = false;
   async function toggleScreenShare() {
-    if (!webrtc) return;
+    if (!webrtc || isTogglingScreenShare) return;
+    isTogglingScreenShare = true;
 
-    if (isSharingScreen) {
-      await webrtc.stopScreenShare();
-      isSharingScreen = false;
-      screenText.textContent = 'Compartir Pantalla';
-      btnToggleScreen.classList.remove('bg-rose-600', 'hover:bg-rose-500');
-      btnToggleScreen.classList.add('bg-indigo-600', 'hover:bg-indigo-500');
-
-      sharerActiveCard.classList.add('hidden');
-      if (btnToggleMirrorShield) btnToggleMirrorShield.classList.add('hidden');
-      pipPreviewContainer.classList.add('hidden');
-      isPipOpen = false;
-      pipBtnText.textContent = 'Miniatura Flotante';
-      pipVideo.srcObject = null;
-
-      unregisterActiveScreen('local');
-      socket.emit('screen-share-status', { isSharing: false });
-      checkScreenSharingState();
-      showToast('Dejaste de compartir pantalla', 'info');
-    } else {
-      const targetFps = parseInt(userSettings.screenFps, 10) || 60;
-      const stream = await webrtc.startScreenShare(async () => {
+    try {
+      if (isSharingScreen) {
+        await webrtc.stopScreenShare();
         isSharingScreen = false;
         screenText.textContent = 'Compartir Pantalla';
         btnToggleScreen.classList.remove('bg-rose-600', 'hover:bg-rose-500');
@@ -1720,25 +1712,46 @@ document.addEventListener('DOMContentLoaded', async () => {
         unregisterActiveScreen('local');
         socket.emit('screen-share-status', { isSharing: false });
         checkScreenSharingState();
-      }, targetFps);
+        showToast('Dejaste de compartir pantalla', 'info');
+      } else {
+        const targetFps = parseInt(userSettings.screenFps, 10) || 60;
+        const stream = await webrtc.startScreenShare(async () => {
+          isSharingScreen = false;
+          screenText.textContent = 'Compartir Pantalla';
+          btnToggleScreen.classList.remove('bg-rose-600', 'hover:bg-rose-500');
+          btnToggleScreen.classList.add('bg-indigo-600', 'hover:bg-indigo-500');
 
-      if (stream) {
-        isSharingScreen = true;
-        screenText.textContent = 'Detener Pantalla';
-        btnToggleScreen.classList.remove('bg-indigo-600', 'hover:bg-indigo-500');
-        btnToggleScreen.classList.add('bg-rose-600', 'hover:bg-rose-500');
+          sharerActiveCard.classList.add('hidden');
+          if (btnToggleMirrorShield) btnToggleMirrorShield.classList.add('hidden');
+          pipPreviewContainer.classList.add('hidden');
+          isPipOpen = false;
+          pipBtnText.textContent = 'Miniatura Flotante';
+          pipVideo.srcObject = null;
 
-        registerActiveScreen('local', stream, 'Mi Pantalla (Tú)');
-        selectActiveScreen('local');
+          unregisterActiveScreen('local');
+          socket.emit('screen-share-status', { isSharing: false });
+          checkScreenSharingState();
+        }, targetFps);
 
-        if (userSettings.antiMirror) {
-          videoWrapper.classList.add('hidden');
-          sharerActiveCard.classList.remove('hidden');
+        if (stream) {
+          isSharingScreen = true;
+          screenText.textContent = 'Detener Pantalla';
+          btnToggleScreen.classList.remove('bg-indigo-600', 'hover:bg-indigo-500');
+          btnToggleScreen.classList.add('bg-rose-600', 'hover:bg-rose-500');
+
+          registerActiveScreen('local', stream, 'Mi Pantalla (Tú)');
+          selectActiveScreen('local');
+
+          // Mostrar video en vivo directamente (si el usuario desea ocultarlo para evitar espejo, usa el botón flotante)
+          sharerActiveCard.classList.add('hidden');
+          videoWrapper.classList.remove('hidden');
+
+          socket.emit('screen-share-status', { isSharing: true });
+          showToast('Transmitiendo en vivo', 'success');
         }
-
-        socket.emit('screen-share-status', { isSharing: true });
-        showToast('Transmitiendo en vivo', 'success');
       }
+    } finally {
+      isTogglingScreenShare = false;
     }
     renderParticipants();
   }

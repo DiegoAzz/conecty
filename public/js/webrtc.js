@@ -10,7 +10,10 @@ class WebRTCManager {
     this.iceServers = iceServers || [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun.cloudflare.com:3478' }
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun.cloudflare.com:3478' },
+      { urls: 'stun:global.stun.twilio.com:3478' },
+      { urls: 'stun:stun.services.mozilla.com:3478' }
     ];
     this.onRemoteStream = onRemoteStream;
     this.onRemoteLeave = onRemoteLeave;
@@ -179,20 +182,17 @@ class WebRTCManager {
         stream = await navigator.mediaDevices.getDisplayMedia({
           video: {
             cursor: 'always',
-            width: { ideal: 3840, max: 3840 },
-            height: { ideal: 2160, max: 2160 },
-            frameRate: { ideal: targetFps, max: targetFps }
+            width: { ideal: 3840 },
+            height: { ideal: 2160 },
+            frameRate: { ideal: targetFps }
           },
           audio: false
         });
       } catch (errCapture) {
-        console.warn('Reintento con captura básica:', errCapture);
+        console.warn('Reintento con captura básica nativa:', errCapture);
         stream = await navigator.mediaDevices.getDisplayMedia({
           video: {
-            cursor: 'always',
-            width: { ideal: 1920, max: 3840 },
-            height: { ideal: 1080, max: 2160 },
-            frameRate: { ideal: targetFps, max: targetFps }
+            cursor: 'always'
           },
           audio: false
         });
@@ -527,7 +527,9 @@ class WebRTCManager {
     const peerObj = this.peers.get(responderId);
     if (peerObj && peerObj.pc) {
       try {
-        await peerObj.pc.setRemoteDescription(new RTCSessionDescription(answer));
+        if (peerObj.pc.signalingState === 'have-local-offer') {
+          await peerObj.pc.setRemoteDescription(new RTCSessionDescription(answer));
+        }
 
         // Vaciar candidatos pendientes
         if (peerObj.pendingCandidates.length > 0) {
@@ -558,7 +560,8 @@ class WebRTCManager {
    * Maneja un candidato ICE recibido
    */
   async handleCandidate(senderId, candidate) {
-    const peerObj = this.peers.get(senderId);
+    if (!candidate) return;
+    const peerObj = this.peers.get(senderId) || this.getOrCreatePeer(senderId, false);
     if (peerObj && peerObj.pc) {
       if (!peerObj.pc.remoteDescription || !peerObj.pc.remoteDescription.type) {
         // Encolar candidato si remoteDescription aún no se ha establecido
