@@ -1417,6 +1417,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       if (!isSharing) {
         unregisterActiveScreen(userId);
+        checkScreenSharingState();
       } else {
         // Si el usuario remoto comenzó a transmitir pantalla pero después de 1 segundo
         // aún no se ha recibido el stream de video, solicitar la re-negociación automáticamente
@@ -1428,7 +1429,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }, 1200);
       }
       renderParticipants();
-      checkScreenSharingState();
     });
 
     socket.on('new-message', (msg) => {
@@ -1620,10 +1620,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function checkScreenSharingState() {
-    // Purgar de activeScreens cualquier stream que no tenga tracks vivos
+    // Purgar de activeScreens únicamente streams que hayan finalizado completamente todos sus tracks
     for (const [id, sData] of activeScreens.entries()) {
-      if (!sData.stream || sData.stream.getVideoTracks().length === 0 || sData.stream.getVideoTracks().every((t) => t.readyState === 'ended')) {
+      if (!sData.stream) {
         activeScreens.delete(id);
+      } else if (id !== 'local') {
+        const vTracks = sData.stream.getVideoTracks ? sData.stream.getVideoTracks() : [];
+        if (vTracks.length > 0 && vTracks.every((t) => t.readyState === 'ended')) {
+          activeScreens.delete(id);
+        }
       }
     }
     renderMultiScreenTabs();
@@ -1632,6 +1637,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!currentActiveScreenId || !activeScreens.has(currentActiveScreenId)) {
         const nextId = activeScreens.keys().next().value;
         selectActiveScreen(nextId);
+      } else {
+        // Asegurar que la pantalla activa se mantenga visible y la pantalla de espera oculta
+        idleScreen.classList.add('hidden');
+        sharerActiveCard.classList.add('hidden');
+        videoWrapper.classList.remove('hidden');
       }
     } else {
       currentActiveScreenId = null;
