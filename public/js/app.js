@@ -1937,7 +1937,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       window.location.href = '/';
     }
   });
-});
 
 
   // ================= GRABADOR DE SESIÓN (PANTALLA + AUDIO) =================
@@ -2823,3 +2822,4 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (window.lucide) lucide.createIcons();
   }
+});
