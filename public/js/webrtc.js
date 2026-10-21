@@ -1,7 +1,7 @@
 /**
- * WebRTC Connection Manager
- * Implementación robusta con re-negociación automática (Perfect Negotiation)
- * para llamadas de voz y transmisión de pantalla dinámica de alta fidelidad.
+ * WebRTC Connection Manager — Conecty / Remotex Web
+ * Implementación 100% estándar W3C Perfect Negotiation con transceivers,
+ * cola de re-negociación resiliente y transporte de pantalla de alta fidelidad.
  */
 
 class WebRTCManager {
@@ -11,6 +11,8 @@ class WebRTCManager {
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
       { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' },
       { urls: 'stun:stun.cloudflare.com:3478' },
       { urls: 'stun:global.stun.twilio.com:3478' },
       { urls: 'stun:stun.services.mozilla.com:3478' }
@@ -19,7 +21,7 @@ class WebRTCManager {
     this.onRemoteLeave = onRemoteLeave;
     this.onDataChannelMessage = onDataChannelMessage;
 
-    // socketId -> { pc, dataChannel, screenSenders: [], audioSender: null, pendingCandidates: [], makingOffer: false, ignoreOffer: false, isPolite: boolean }
+    // socketId -> { pc, dataChannel, screenSenders: [], audioSender: null, pendingCandidates: [], makingOffer: false, ignoreOffer: false, isPolite: boolean, renegotiationPending: boolean, remoteStream: MediaStream }
     this.peers = new Map();
 
     this.localAudioStream = null;
@@ -28,7 +30,7 @@ class WebRTCManager {
   }
 
   /**
-   * Inicializa el micrófono local para la llamada de voz
+   * Inicializa el micrófono local para la llamada de voz bidireccional
    */
   async initLocalAudio() {
     try {
@@ -84,10 +86,12 @@ class WebRTCManager {
       pendingCandidates: [],
       makingOffer: false,
       ignoreOffer: false,
-      isPolite
+      isPolite,
+      renegotiationPending: false,
+      remoteStream: new MediaStream()
     };
 
-    // Crear DataChannel para eventos del puntero láser y control remoto
+    // Crear DataChannel para eventos del puntero láser y anotaciones colaborativas
     if (isInitiator) {
       try {
         peerObj.dataChannel = pc.createDataChannel('conecty-events', {
@@ -105,22 +109,27 @@ class WebRTCManager {
       };
     }
 
+    // Configurar transceivers predeterminados para asegurar que el SDP contenga video y audio
+    try {
+      if (this.localScreenStream) {
+        const videoTrack = this.localScreenStream.getVideoTracks()[0];
+        if (videoTrack) {
+          const sender = pc.addTrack(videoTrack, this.localScreenStream);
+          peerObj.screenSenders.push(sender);
+        }
+      } else {
+        pc.addTransceiver('video', { direction: 'recvonly' });
+      }
+    } catch (e) {
+      console.warn('Transceiver de video:', e);
+    }
+
     // Agregar tracks de audio locales si ya están disponibles
     if (this.localAudioStream) {
       this.localAudioStream.getAudioTracks().forEach((track) => {
-        peerObj.audioSender = pc.addTrack(track, this.localAudioStream);
-      });
-    }
-
-    // Agregar tracks de pantalla locales si ya se está compartiendo
-    if (this.localScreenStream) {
-      this.localScreenStream.getTracks().forEach((track) => {
         try {
-          const sender = pc.addTrack(track, this.localScreenStream);
-          peerObj.screenSenders.push(sender);
-        } catch (e) {
-          console.warn('Track de pantalla ya asignado:', e);
-        }
+          peerObj.audioSender = pc.addTrack(track, this.localAudioStream);
+        } catch (e) {}
       });
     }
 
@@ -137,9 +146,41 @@ class WebRTCManager {
     // Manejar tracks remotos entrantes (audio o pantalla)
     pc.ontrack = (event) => {
       console.log(`📡 Recibido track remoto (${event.track.kind}) de ${targetId}`);
+      let stream = event.streams && event.streams[0] ? event.streams[0] : null;
+      if (!stream) {
+        peerObj.remoteStream.addTrack(event.track);
+        stream = peerObj.remoteStream;
+      } else {
+        peerObj.remoteStream = stream;
+      }
       if (this.onRemoteStream) {
-        const stream = event.streams && event.streams[0] ? event.streams[0] : new MediaStream([event.track]);
         this.onRemoteStream(targetId, stream, event.track);
+      }
+    };
+
+    // Monitoreo de estado de señalización y vaciado de cola de re-negociación
+    pc.onsignalingstatechange = async () => {
+      console.log(`📡 Signaling state con ${targetId}: ${pc.signalingState}`);
+      if (pc.signalingState === 'stable') {
+        // Optimizar parámetros de codificación de video (8 Mbps max para nitidez sin sobrecargar)
+        peerObj.screenSenders.forEach((sender) => {
+          if (sender.track && sender.track.kind === 'video' && sender.setParameters) {
+            try {
+              const params = sender.getParameters();
+              if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
+              params.encodings[0].maxBitrate = 8000000;
+              params.encodings[0].priority = 'high';
+              params.encodings[0].networkPriority = 'high';
+              sender.setParameters(params).catch(() => {});
+            } catch (e) {}
+          }
+        });
+
+        // Ejecutar re-negociación pendiente si fue encolada mientras no estaba stable
+        if (peerObj.renegotiationPending) {
+          peerObj.renegotiationPending = false;
+          await this.renegotiate(targetId);
+        }
       }
     };
 
@@ -171,7 +212,7 @@ class WebRTCManager {
   }
 
   /**
-   * Inicia la captura de pantalla y re-negocia con todos los participantes
+   * Inicia la captura de pantalla nativa del navegador y re-negocia con los participantes
    */
   async startScreenShare(onEnded, fps = 60) {
     try {
@@ -237,56 +278,60 @@ class WebRTCManager {
   }
 
   /**
-   * Agrega los tracks de pantalla local a un peer específico y re-negocia
+   * Agrega o reemplaza los tracks de pantalla local en un peer específico y re-negocia
    */
   async shareScreenWithPeer(peerId) {
     const peerObj = this.peers.get(peerId) || this.getOrCreatePeer(peerId, true);
     if (!peerObj || !peerObj.pc || !this.localScreenStream) return;
     const pc = peerObj.pc;
 
-    const currentSenders = pc.getSenders();
-    this.localScreenStream.getTracks().forEach((track) => {
-      const alreadyAdded = currentSenders.some((s) => s.track && s.track.id === track.id);
-      if (!alreadyAdded) {
+    const videoTrack = this.localScreenStream.getVideoTracks()[0];
+    if (!videoTrack) return;
+
+    // Buscar transceiver de video existente para reutilizarlo instantáneamente vía replaceTrack
+    const transceivers = pc.getTransceivers ? pc.getTransceivers() : [];
+    const videoTransceiver = transceivers.find((t) => (t.receiver && t.receiver.track && t.receiver.track.kind === 'video') || (t.sender && t.sender.track && t.sender.track.kind === 'video'));
+
+    if (videoTransceiver && videoTransceiver.sender) {
+      try {
+        videoTransceiver.direction = 'sendrecv';
+        await videoTransceiver.sender.replaceTrack(videoTrack);
+        if (!peerObj.screenSenders.includes(videoTransceiver.sender)) {
+          peerObj.screenSenders.push(videoTransceiver.sender);
+        }
+      } catch (err) {
+        console.warn('Error en replaceTrack, intentando addTrack:', err);
+        const currentSenders = pc.getSenders();
+        if (!currentSenders.some((s) => s.track && s.track.id === videoTrack.id)) {
+          const sender = pc.addTrack(videoTrack, this.localScreenStream);
+          peerObj.screenSenders.push(sender);
+        }
+      }
+    } else {
+      const currentSenders = pc.getSenders();
+      if (!currentSenders.some((s) => s.track && s.track.id === videoTrack.id)) {
         try {
-          const sender = pc.addTrack(track, this.localScreenStream);
+          const sender = pc.addTrack(videoTrack, this.localScreenStream);
           peerObj.screenSenders.push(sender);
         } catch (e) {
-          console.warn(`Error agregando track de pantalla al peer ${peerId}:`, e);
+          console.warn('Error al llamar addTrack:', e);
         }
       }
-    });
-
-    const triggerRenegotiate = async () => {
-      if (pc.signalingState === 'stable') {
-        await this.renegotiate(peerId);
-        // Optimizar parámetros de codificación de video (8 Mbps max para nitidez sin sobrecargar)
-        peerObj.screenSenders.forEach((sender) => {
-          if (sender.track && sender.track.kind === 'video' && sender.setParameters) {
-            try {
-              const params = sender.getParameters();
-              if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
-              params.encodings[0].maxBitrate = 8000000;
-              params.encodings[0].priority = 'high';
-              params.encodings[0].networkPriority = 'high';
-              sender.setParameters(params).catch(() => {});
-            } catch (e) {}
-          }
-        });
-      }
-    };
-
-    if (pc.signalingState === 'stable') {
-      await triggerRenegotiate();
-    } else {
-      const onStable = async () => {
-        if (pc.signalingState === 'stable') {
-          pc.removeEventListener('signalingstatechange', onStable);
-          await triggerRenegotiate();
-        }
-      };
-      pc.addEventListener('signalingstatechange', onStable);
     }
+
+    // Audio de pantalla si se autorizó captura de sistema
+    const audioTrack = this.localScreenStream.getAudioTracks()[0];
+    if (audioTrack) {
+      const currentSenders = pc.getSenders();
+      if (!currentSenders.some((s) => s.track && s.track.id === audioTrack.id)) {
+        try {
+          const sender = pc.addTrack(audioTrack, this.localScreenStream);
+          peerObj.screenSenders.push(sender);
+        } catch (e) {}
+      }
+    }
+
+    await this.renegotiate(peerId);
   }
 
   /**
@@ -301,15 +346,17 @@ class WebRTCManager {
         if (peerObj.screenSenders && peerObj.screenSenders.length > 0) {
           peerObj.screenSenders.forEach((sender) => {
             try {
-              pc.removeTrack(sender);
+              if (sender.replaceTrack) {
+                sender.replaceTrack(null).catch(() => {});
+              } else {
+                pc.removeTrack(sender);
+              }
             } catch (e) {
               console.warn('Error al remover track de pantalla:', e);
             }
           });
           peerObj.screenSenders = [];
-          if (pc.signalingState === 'stable') {
-            await this.renegotiate(peerId);
-          }
+          await this.renegotiate(peerId);
         }
       }
       this.localScreenStream = null;
@@ -317,18 +364,22 @@ class WebRTCManager {
   }
 
   /**
-   * Re-negociación SDP para enviar actualizaciones de tracks
+   * Re-negociación SDP con cola de espera resiliente
    */
   async renegotiate(peerId) {
     const peerObj = this.peers.get(peerId);
     if (!peerObj || !peerObj.pc) return;
+
     if (peerObj.pc.signalingState !== 'stable') {
-      console.warn(`renegotiate con ${peerId} pospuesto: signalingState=${peerObj.pc.signalingState}`);
+      console.log(`⏳ Re-negociación con ${peerId} encolada (signalingState: ${peerObj.pc.signalingState})`);
+      peerObj.renegotiationPending = true;
       return;
     }
+
     try {
       peerObj.makingOffer = true;
       const offer = await peerObj.pc.createOffer();
+      if (peerObj.pc.signalingState !== 'stable') return;
       await peerObj.pc.setLocalDescription(offer);
 
       const localDesc = peerObj.pc.localDescription;
@@ -347,7 +398,7 @@ class WebRTCManager {
   }
 
   /**
-   * Crea una oferta SDP inicial
+   * Crea una oferta SDP inicial hacia un destinatario
    */
   async createOffer(targetId) {
     this.getOrCreatePeer(targetId, true);
@@ -355,7 +406,7 @@ class WebRTCManager {
   }
 
   /**
-   * Maneja una oferta SDP recibida (con soporte de Perfect Negotiation)
+   * Maneja una oferta SDP recibida (con soporte de Perfect Negotiation W3C)
    */
   async handleOffer(callerId, offer) {
     if (!offer || !offer.sdp) return;
@@ -449,6 +500,12 @@ class WebRTCManager {
         // Si tenemos pantalla activa y no la tiene este peer, enviarla ahora que el handshake es estable
         if (this.localScreenStream && peerObj.screenSenders.length === 0) {
           await this.shareScreenWithPeer(responderId);
+        }
+
+        // Si quedó re-negociación pendiente, ejecutarla
+        if (peerObj.renegotiationPending && peerObj.pc.signalingState === 'stable') {
+          peerObj.renegotiationPending = false;
+          await this.renegotiate(responderId);
         }
       } catch (err) {
         console.error('Error aplicando respuesta SDP:', err);

@@ -1300,11 +1300,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateAgentStatusUI(true);
       }
 
-      existingUsers.forEach((existing) => {
-        if (existing.id !== socket.id && !existing.isAgent && existing.name !== 'Windows-Native-Agent') {
-          webrtc.createOffer(existing.id);
-        }
-      });
+      // El participante existente en la sala iniciará la conexión WebRTC hacia este nuevo usuario en user-connected.
+      setTimeout(() => {
+        existingUsers.forEach((existing) => {
+          if (existing.id !== socket.id && !existing.isAgent && existing.name !== 'Windows-Native-Agent') {
+            if (webrtc && !webrtc.peers.has(existing.id)) {
+              console.log(`📡 Oferta de respaldo hacia participante existente: ${existing.name}`);
+              webrtc.createOffer(existing.id);
+            }
+          }
+        });
+      }, 3500);
+    
     });
 
     socket.on('room-join-denied', ({ reason }) => {
@@ -1371,12 +1378,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       participants.set(user.id, user);
       renderParticipants();
 
+      // El participante que ya estaba en la sala inicia la conexión WebRTC hacia el nuevo participante
       if (webrtc) {
-        webrtc.getOrCreatePeer(user.id, false);
-      }
-
-      if (isSharingScreen && webrtc && webrtc.localScreenStream) {
-        await webrtc.shareScreenWithPeer(user.id);
+        if (isSharingScreen && webrtc.localScreenStream) {
+          console.log(`📡 Compartiendo pantalla con el nuevo participante ${user.name} (${user.id})`);
+          await webrtc.shareScreenWithPeer(user.id);
+        } else {
+          console.log(`📡 Iniciando conexión WebRTC hacia ${user.name} (${user.id})`);
+          await webrtc.createOffer(user.id);
+        }
       }
     });
 
@@ -1419,14 +1429,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         unregisterActiveScreen(userId);
         checkScreenSharingState();
       } else {
-        // Si el usuario remoto comenzó a transmitir pantalla pero después de 1 segundo
-        // aún no se ha recibido el stream de video, solicitar la re-negociación automáticamente
+        // Si el usuario remoto comenzó a transmitir pantalla, verificar si ya tenemos el stream
         setTimeout(() => {
           if (!activeScreens.has(userId) && user && user.isScreenSharing) {
-            console.log(`📡 Solicitando re-negociación proactiva de pantalla a ${userId}...`);
+            const peerObj = webrtc ? webrtc.peers.get(userId) : null;
+            if (peerObj && peerObj.pc) {
+              const receivers = peerObj.pc.getReceivers ? peerObj.pc.getReceivers() : [];
+              const videoReceiver = receivers.find((r) => r.track && r.track.kind === 'video' && r.track.readyState === 'live');
+              if (videoReceiver && videoReceiver.track) {
+                const stream = peerObj.remoteStream || new MediaStream([videoReceiver.track]);
+                handleRemoteVideo(userId, stream);
+                return;
+              }
+            }
+            console.log(`📡 Solicitando re-transmisión de pantalla a ${userId}...`);
             socket.emit('request-screen-renegotiation', { sharerId: userId });
           }
-        }, 1200);
+        }, 800);
       }
       renderParticipants();
     });
@@ -1605,12 +1624,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Limpiar automáticamente cuando el track de video remoto finalice o reproduzca al desmutear
     stream.getVideoTracks().forEach((track) => {
       track.onended = () => {
-        unregisterActiveScreen(peerId);
+        const u = participants.get(peerId);
+        if (!u || !u.isScreenSharing) {
+          unregisterActiveScreen(peerId);
+          checkScreenSharingState();
+        }
       };
       track.addEventListener('unmute', () => {
         if (screenVideo && screenVideo.srcObject) {
           screenVideo.play().catch(() => {});
         }
+        updateScreenDisplay();
       });
     });
 
