@@ -174,6 +174,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     myDeviceId = Math.floor(100000000 + Math.random() * 900000000).toString();
     localStorage.setItem('conecty_device_id', myDeviceId);
   }
+  let currentRoomId = null;
 
   function formatDeviceId(id) {
     if (!id) return '';
@@ -185,9 +186,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   myDeviceIdDisplay.textContent = formatDeviceId(myDeviceId);
-  if (typeof updateAgentCommandDisplay === 'function') {
-    updateAgentCommandDisplay();
-  }
 
   // Configuraciones de Usuario Persistentes
   const defaultSettings = {
@@ -250,6 +248,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (toggleHostAllowControl) {
       toggleHostAllowControl.checked = userSettings.allowControl;
+    }
+
+    if (typeof updateAgentCommandDisplay === 'function') {
+      updateAgentCommandDisplay();
     }
   }
 
@@ -573,7 +575,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   let webrtc = null;
   let laser = null;
   let myUser = null;
-  let currentRoomId = null;
   let isSharingScreen = false;
   let unreadChatCount = 0;
   let isChatOpen = false;
