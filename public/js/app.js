@@ -1079,31 +1079,26 @@ document.addEventListener('DOMContentLoaded', async () => {
       ...actionData
     };
 
-    // 1. Siempre emitir por WebRTC DataChannel (para latencia ultrabaja en navegador)
-    if (webrtc) {
-      webrtc.broadcastData(payload);
-    }
-
-    // 2. Transmitir por Socket.io (para que el Asistente Nativo de Windows ejecute clics reales en el SO)
-    if (socket) {
+    // Emitir por WebRTC DataChannel primero (latencia ultrabaja)
+    // Si no hay DataChannel abierto, caer en Socket.io como respaldo
+    const sentP2P = webrtc ? webrtc.broadcastData(payload) : false;
+    if (!sentP2P && socket) {
+      // Throttle moves via socket to avoid flooding (DataChannel handles high-freq updates)
       if (actionData.type === 'move') {
         const now = Date.now();
-        if (now - lastSocketMoveTime > 30) {
+        if (now - lastSocketMoveTime > 50) {
           lastSocketMoveTime = now;
           socket.emit('remote-control', payload);
         }
       } else {
-        // Clics físicos, rueda de scroll y pulsaciones de teclas se envían de inmediato
         socket.emit('remote-control', payload);
       }
     }
   }
 
   function handleIncomingRemoteControl(data, senderId) {
-    // Si el anfitrión no permite el control remoto, ignorar
-    if (!userSettings.allowControl || (toggleHostAllowControl && !toggleHostAllowControl.checked)) {
-      return;
-    }
+    // El cursor visual remoto SIEMPRE se muestra cuando el usuario autorizado envía eventos.
+    // (allowControl era para control OS real; no debe bloquear el cursor visual)
 
     // Deduplicación para evitar ejecutar dos veces si llega por WebRTC y WebSocket
     if (data.id) {
@@ -1117,6 +1112,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const user = participants.get(senderId || data.senderId);
     if (laser) {
+      // Advertir cuando el host está en modo anti-espejo (videoWrapper oculto)
+      // getVideoRenderRect() ya usa el canvas como fallback en ese caso
+      if (videoWrapper && videoWrapper.classList.contains('hidden')) {
+        console.debug('[RemoteControl] videoWrapper oculto (modo anti-espejo); usando canvas como fallback para posición del cursor');
+      }
       laser.handleRemoteControl({
         ...data,
         senderId: senderId || data.senderId,
@@ -1125,41 +1125,38 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // Toggle del botón de Control Remoto en el Dock
-  // NOTA: el control solo se puede activar si el anfitrión lo concedió (authorizedControllerId === socket.id)
+  // Toggle del botÃ³n de Puntero / Control Remoto en el Dock
+  // El espectador activa su puntero remoto libremente; el servidor verifica autorizaciÃ³n para eventos reales
   btnToggleControl.addEventListener('click', () => {
-    // Si no tenemos autorización de control, mostrar explicación
-    if (!authorizedControllerId || authorizedControllerId !== socket.id) {
-      // Espectador puede pedir control vía 'alzar mano' o al anfitrión; no activar unilateralmente
-      showToast('⚠️ El puntero láser está disponible. Para tomar el control, el anfitrión debe cedértelo.', 'info');
+    if (isHost || isSharingScreen) {
+      showToast('Usa el boton "Ceder Control" arriba para asignar control a un participante.', 'info');
       return;
     }
 
     isRemoteControlActive = !isRemoteControlActive;
 
     if (isRemoteControlActive) {
-      // Si el modo láser estaba activo, desactivarlo para evitar conflicto
-      if (laser && laser.isActive) {
-        laser.isActive = false;
-        btnToggleLaser.classList.remove('border-indigo-500/80', 'bg-indigo-950/40');
-        pointerModeIndicator.classList.add('hidden');
-      }
+      // Desactivar modo laser para evitar interferencia de eventos
+      if (laser) laser.isActive = false;
+      if (btnToggleLaser) btnToggleLaser.classList.remove('border-indigo-500/80', 'bg-indigo-950/40');
+      if (pointerModeIndicator) pointerModeIndicator.classList.add('hidden');
 
       btnToggleControl.classList.remove('bg-slate-800', 'text-slate-200');
       btnToggleControl.classList.add('bg-emerald-600', 'text-white', 'border-emerald-500/80');
       controlIcon.className = 'w-4 h-4 text-white animate-pulse';
       remoteControlBanner.classList.remove('hidden');
       const bannerText = document.getElementById('remoteControlBannerText');
-      if (bannerText) bannerText.textContent = '🎮 Modo Control Remoto Activo';
-      laserCanvas.style.cursor = 'default';
-      showToast('🎮 Modo Control Remoto Activado', 'success');
+      if (bannerText) bannerText.textContent = 'Puntero Remoto Activo â€” mueve el cursor sobre la pantalla';
+      laserCanvas.style.cursor = 'crosshair';
+      showToast('Puntero Remoto activado â€” el anfitrion ve tu cursor sobre su pantalla', 'success');
     } else {
+      if (laser) laser.isActive = true;
       btnToggleControl.classList.add('bg-slate-800', 'text-slate-200');
       btnToggleControl.classList.remove('bg-emerald-600', 'text-white', 'border-emerald-500/80');
       controlIcon.className = 'w-4 h-4 text-slate-400';
       remoteControlBanner.classList.add('hidden');
       laserCanvas.style.cursor = 'crosshair';
-      showToast('Control remoto desactivado', 'info');
+      showToast('Puntero remoto desactivado', 'info');
     }
   });
 
@@ -2397,11 +2394,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (isMe) {
       // Soy yo quien tiene el control — activar modo remoto
       isRemoteControlActive = true;
+      // Desactivar laser para que no interfiera con el puntero remoto
+      if (laser) laser.isActive = false;
+      if (btnToggleLaser) btnToggleLaser.classList.remove('border-indigo-500/80', 'bg-indigo-950/40');
+      if (pointerModeIndicator) pointerModeIndicator.classList.add('hidden');
       btnToggleControl.classList.remove('bg-slate-800');
       btnToggleControl.classList.add('bg-emerald-600', 'hover:bg-emerald-500', 'text-white');
       if (controlIcon) controlIcon.className = 'w-4 h-4 text-white animate-pulse';
       if (laserCanvas) {
-        laserCanvas.style.cursor = 'default';
+        laserCanvas.style.cursor = 'crosshair';
       }
       if (remoteControlBanner) {
         remoteControlBanner.classList.remove('hidden');

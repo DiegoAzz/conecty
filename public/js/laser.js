@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Módulo de Puntero Láser, Anotaciones y Emulación de Control Remoto en Tiempo Real
  * Maneja coordenadas normalizadas (0.0 a 1.0) con cálculo geométrico exacto
  * que compensa aspect ratio, letterboxing y resolución tanto en emisor como receptor.
@@ -61,6 +61,17 @@ class LaserController {
   getVideoRenderRect() {
     const cRect = this.canvas.getBoundingClientRect();
     const vRect = this.video.getBoundingClientRect();
+
+    // Si el elemento video está oculto o sin dimensiones (ej. anfitrión en modo anti-espejo)
+    // usar el canvas completo como área de referencia para que el cursor remoto aparezca
+    if (vRect.width <= 0 || vRect.height <= 0 || this.video.videoWidth <= 0) {
+      return {
+        offsetX: 0,
+        offsetY: 0,
+        renderWidth: Math.max(1, cRect.width),
+        renderHeight: Math.max(1, cRect.height)
+      };
+    }
 
     const videoWidth = this.video.videoWidth || (vRect.width > 0 ? vRect.width : cRect.width);
     const videoHeight = this.video.videoHeight || (vRect.height > 0 ? vRect.height : cRect.height);
