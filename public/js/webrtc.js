@@ -162,19 +162,8 @@ class WebRTCManager {
     pc.onsignalingstatechange = async () => {
       console.log(`📡 Signaling state con ${targetId}: ${pc.signalingState}`);
       if (pc.signalingState === 'stable') {
-        // Optimizar parámetros de codificación de video (8 Mbps max para nitidez sin sobrecargar)
-        peerObj.screenSenders.forEach((sender) => {
-          if (sender.track && sender.track.kind === 'video' && sender.setParameters) {
-            try {
-              const params = sender.getParameters();
-              if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
-              params.encodings[0].maxBitrate = 8000000;
-              params.encodings[0].priority = 'high';
-              params.encodings[0].networkPriority = 'high';
-              sender.setParameters(params).catch(() => {});
-            } catch (e) {}
-          }
-        });
+        // Aplicar perfil de calidad activo al estabilizar la señalización
+        this.setQualityProfile(this.qualityProfile || 'auto');
 
         // Ejecutar re-negociación pendiente si fue encolada mientras no estaba stable
         if (peerObj.renegotiationPending) {
@@ -566,6 +555,91 @@ class WebRTCManager {
     if (this.onRemoteLeave) {
       this.onRemoteLeave(peerId);
     }
+  }
+
+  /**
+   * Aplica un perfil de calidad de video a todos los senders de pantalla activos.
+   * Perfiles: 'auto' | '1080p' | '1440p' | '4k'
+   * Se llama tras cada renegociación y al cambiar el perfil manualmente.
+   */
+  setQualityProfile(profile) {
+    this.qualityProfile = profile || 'auto';
+    const bitrateMap = {
+      'auto':  8_000_000,
+      '1080p': 8_000_000,
+      '1440p': 15_000_000,
+      '4k':    25_000_000
+    };
+    const maxBitrate = bitrateMap[this.qualityProfile] || bitrateMap['auto'];
+
+    for (const [, peerObj] of this.peers.entries()) {
+      peerObj.screenSenders.forEach((sender) => {
+        if (sender && sender.track && sender.track.kind === 'video' && sender.setParameters) {
+          try {
+            const params = sender.getParameters();
+            if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
+            params.encodings[0].maxBitrate = maxBitrate;
+            params.encodings[0].priority = 'high';
+            params.encodings[0].networkPriority = 'high';
+            sender.setParameters(params).catch(() => {});
+          } catch (e) {}
+        }
+      });
+    }
+    console.log(`🎯 Perfil de calidad aplicado: ${this.qualityProfile} (${(maxBitrate / 1_000_000).toFixed(0)} Mbps max)`);
+  }
+
+  /**
+   * Recopila estadísticas WebRTC de todos los peers activos.
+   * Devuelve un array de objetos con métricas de video y red.
+   */
+  async collectStats() {
+    const results = [];
+    for (const [peerId, peerObj] of this.peers.entries()) {
+      if (!peerObj.pc) continue;
+      try {
+        const statsReport = await peerObj.pc.getStats();
+        const entry = { peerId, video: null, network: null };
+
+        statsReport.forEach((stat) => {
+          if (stat.type === 'outbound-rtp' && stat.kind === 'video') {
+            entry.video = {
+              direction: 'send',
+              frameWidth: stat.frameWidth || 0,
+              frameHeight: stat.frameHeight || 0,
+              framesPerSecond: Math.round(stat.framesPerSecond || 0),
+              bytesSent: stat.bytesSent || 0,
+              qualityLimitReason: stat.qualityLimitationReason || 'none'
+            };
+          }
+          if (stat.type === 'inbound-rtp' && stat.kind === 'video') {
+            entry.video = {
+              direction: 'recv',
+              frameWidth: stat.frameWidth || 0,
+              frameHeight: stat.frameHeight || 0,
+              framesPerSecond: Math.round(stat.framesPerSecond || 0),
+              bytesReceived: stat.bytesReceived || 0,
+              packetsLost: stat.packetsLost || 0,
+              jitter: stat.jitter ? stat.jitter.toFixed(4) : '0'
+            };
+          }
+          if (stat.type === 'candidate-pair' && stat.state === 'succeeded') {
+            entry.network = {
+              currentRoundTripTime: stat.currentRoundTripTime
+                ? Math.round(stat.currentRoundTripTime * 1000)
+                : null,
+              availableOutgoingBitrate: stat.availableOutgoingBitrate
+                ? Math.round(stat.availableOutgoingBitrate / 1000)
+                : null
+            };
+          }
+        });
+        results.push(entry);
+      } catch (e) {
+        console.warn('Error al recopilar estadísticas WebRTC:', e);
+      }
+    }
+    return results;
   }
 
   disconnectAll() {

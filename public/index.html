@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es" class="h-full bg-slate-950 text-slate-100">
 <head>
   <meta charset="UTF-8">
@@ -453,6 +453,17 @@
             <span id="remoteControlBannerText">Modo Control Remoto Activo</span>
           </div>
 
+          <!-- Panel de Estadísticas WebRTC (toggle con botón Stats) -->
+          <div id="statsOverlay" class="absolute bottom-16 left-4 z-20 px-3.5 py-2.5 rounded-xl glass-panel text-[11px] font-mono text-slate-300 border border-slate-700/60 shadow-lg hidden min-w-[220px] space-y-1 leading-relaxed">
+            <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1 flex items-center space-x-1.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span>Stats WebRTC</span>
+            </div>
+            <div id="statsVideo" class="text-slate-200">–</div>
+            <div id="statsNetwork" class="text-slate-400">–</div>
+            <div id="statsQuality" class="text-indigo-300">–</div>
+          </div>
+
           <!-- Barra de Controles de Tamaño de Pantalla & Zoom -->
           <div id="screenControlsBar" class="absolute top-4 right-4 z-20 flex items-center space-x-1.5 p-1.5 rounded-2xl glass-panel border border-slate-700/80 shadow-2xl">
             <!-- Botón Ajustar (Fit) -->
@@ -488,6 +499,13 @@
             <!-- Botón Pantalla Completa (Fullscreen) -->
             <button id="btnFullscreen" class="p-1.5 rounded-xl bg-indigo-600/30 hover:bg-indigo-600 text-indigo-300 hover:text-white text-xs transition border border-indigo-500/40" title="Pantalla Completa (F)">
               <i data-lucide="expand" class="w-3.5 h-3.5"></i>
+            </button>
+
+            <div class="h-4 w-px bg-slate-700 mx-0.5"></div>
+
+            <!-- Botón Toggle Stats WebRTC -->
+            <button id="btnToggleStats" class="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-emerald-400 text-xs transition border border-slate-700" title="Ver estadísticas de transmisión WebRTC">
+              <i data-lucide="bar-chart-2" class="w-3.5 h-3.5"></i>
             </button>
 
             <div class="h-4 w-px bg-slate-700 mx-0.5"></div>
@@ -930,6 +948,17 @@
               </div>
 
               <div>
+                <label class="block text-slate-300 font-semibold mb-1.5">Calidad de Transmisión</label>
+                <select id="settingScreenQuality" class="w-full max-w-sm px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                  <option value="auto">Auto — 8 Mbps (1080p balanceado, Recomendado)</option>
+                  <option value="1080p">HD 1080p — 8 Mbps (nitidez estándar)</option>
+                  <option value="1440p">QHD 1440p — 15 Mbps (alta nitidez, requiere buena red)</option>
+                  <option value="4k">UHD 4K — 25 Mbps (máxima resolución, red de alta velocidad)</option>
+                </select>
+                <p class="text-[10px] text-slate-500 mt-1">La resolución capturada depende del monitor fuente. El bitrate controla la nitidez del video comprimido.</p>
+              </div>
+
+              <div>
                 <label class="block text-slate-300 font-semibold mb-1.5">Escala por Defecto del Visor</label>
                 <select id="settingDefaultScale" class="w-full max-w-sm px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
                   <option value="contain">Ajustar (Contain - Mantiene proporciones sin cortar)</option>
@@ -1073,9 +1102,9 @@
 
   <!-- Scripts con versionado para evitar caché obsoleto del navegador -->
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/js/laser.js?v=2.0.4"></script>
-  <script src="/js/webrtc.js?v=2.0.4"></script>
-  <script src="/js/app.js?v=2.0.4"></script>
+  <script src="/js/laser.js?v=2.0.5"></script>
+  <script src="/js/webrtc.js?v=2.0.5"></script>
+  <script src="/js/app.js?v=2.0.5"></script>
   <script>
     // Inicializar iconos de Lucide
     document.addEventListener("DOMContentLoaded", () => {

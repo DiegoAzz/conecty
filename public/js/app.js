@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Conecty - Aplicación Principal y Control de Estado UI
  * Modelo AnyDesk: ID Fijo de 9 dígitos por dispositivo, Anti-Modo Espejo,
  * Sistema de Autorización Previa de Conexiones Entrantes,
@@ -54,6 +54,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const settingRequireAuth = document.getElementById('settingRequireAuth');
   const settingAllowLaser = document.getElementById('settingAllowLaser');
   const settingScreenFps = document.getElementById('settingScreenFps');
+  const settingScreenQuality = document.getElementById('settingScreenQuality');
   const settingDefaultScale = document.getElementById('settingDefaultScale');
   const settingAntiMirror = document.getElementById('settingAntiMirror');
   const settingEchoCancellation = document.getElementById('settingEchoCancellation');
@@ -192,6 +193,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     allowLaser: true,
     soundEffects: true,
     screenFps: '60',
+    screenQuality: 'auto',
     defaultScale: 'contain',
     antiMirror: false, // Por defecto mostrar video en vivo siempre
     echoCancellation: true,
@@ -237,6 +239,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     settingRequireAuth.checked = userSettings.requireAuth;
     settingAllowLaser.checked = userSettings.allowLaser;
     settingScreenFps.value = userSettings.screenFps;
+    if (settingScreenQuality) settingScreenQuality.value = userSettings.screenQuality || 'auto';
     settingDefaultScale.value = userSettings.defaultScale;
     settingAntiMirror.checked = userSettings.antiMirror;
     settingEchoCancellation.checked = userSettings.echoCancellation;
@@ -419,6 +422,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     userSettings.screenFps = settingScreenFps.value;
     saveSettings();
   });
+
+  if (settingScreenQuality) {
+    settingScreenQuality.addEventListener('change', () => {
+      userSettings.screenQuality = settingScreenQuality.value;
+      saveSettings();
+      // Aplicar el perfil al instante si ya hay conexiones activas
+      if (webrtc) {
+        webrtc.setQualityProfile(userSettings.screenQuality);
+        showToast('Calidad de transmisión actualizada: ' + settingScreenQuality.options[settingScreenQuality.selectedIndex].text, 'success');
+      }
+    });
+  }
 
   settingDefaultScale.addEventListener('change', () => {
     userSettings.defaultScale = settingDefaultScale.value;
@@ -1111,7 +1126,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Toggle del botón de Control Remoto en el Dock
+  // NOTA: el control solo se puede activar si el anfitrión lo concedió (authorizedControllerId === socket.id)
   btnToggleControl.addEventListener('click', () => {
+    // Si no tenemos autorización de control, mostrar explicación
+    if (!authorizedControllerId || authorizedControllerId !== socket.id) {
+      // Espectador puede pedir control vía 'alzar mano' o al anfitrión; no activar unilateralmente
+      showToast('⚠️ El puntero láser está disponible. Para tomar el control, el anfitrión debe cedértelo.', 'info');
+      return;
+    }
+
     isRemoteControlActive = !isRemoteControlActive;
 
     if (isRemoteControlActive) {
@@ -1126,8 +1149,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       btnToggleControl.classList.add('bg-emerald-600', 'text-white', 'border-emerald-500/80');
       controlIcon.className = 'w-4 h-4 text-white animate-pulse';
       remoteControlBanner.classList.remove('hidden');
+      const bannerText = document.getElementById('remoteControlBannerText');
+      if (bannerText) bannerText.textContent = '🎮 Modo Control Remoto Activo';
       laserCanvas.style.cursor = 'default';
-      showToast('🎮 Modo Control Remoto Activado (Mueve el ratón y haz clic sobre la pantalla)', 'success');
+      showToast('🎮 Modo Control Remoto Activado', 'success');
     } else {
       btnToggleControl.classList.add('bg-slate-800', 'text-slate-200');
       btnToggleControl.classList.remove('bg-emerald-600', 'text-white', 'border-emerald-500/80');
@@ -1817,6 +1842,9 @@ document.addEventListener('DOMContentLoaded', async () => {
           registerActiveScreen('local', stream, 'Mi Pantalla (Tú)');
           selectActiveScreen('local');
 
+          // Aplicar perfil de calidad configurado al comenzar la transmisión
+          webrtc.setQualityProfile(userSettings.screenQuality || 'auto');
+
           // Mostrar video en vivo directamente
           sharerActiveCard.classList.add('hidden');
           videoWrapper.classList.remove('hidden');
@@ -2364,36 +2392,42 @@ document.addEventListener('DOMContentLoaded', async () => {
   function applyMouseControlChanged(authorizedUserId, authorizedUserName) {
     authorizedControllerId = authorizedUserId;
     const isMe = (authorizedUserId === socket.id);
+    const canModerate = isHost || isSharingScreen;
 
     if (isMe) {
+      // Soy yo quien tiene el control — activar modo remoto
       isRemoteControlActive = true;
       btnToggleControl.classList.remove('bg-slate-800');
       btnToggleControl.classList.add('bg-emerald-600', 'hover:bg-emerald-500', 'text-white');
+      if (controlIcon) controlIcon.className = 'w-4 h-4 text-white animate-pulse';
       if (laserCanvas) {
         laserCanvas.style.cursor = 'default';
       }
       if (remoteControlBanner) {
         remoteControlBanner.classList.remove('hidden');
-        remoteControlBannerText.textContent = '🎮 ¡Tienes el control interactivo! Mueve el ratón y haz clic sobre la pantalla';
+        const bannerText = document.getElementById('remoteControlBannerText');
+        if (bannerText) bannerText.textContent = '🎮 ¡Tienes el control interactivo! Mueve el ratón y haz clic sobre la pantalla';
       }
       soundEffects.testChime();
       showToast('🎮 ¡Tienes el control interactivo del ratón y teclado!', 'success');
     } else {
-      const canModerate = isHost || isSharingScreen;
-      if (!canModerate) {
-        isRemoteControlActive = false;
-        btnToggleControl.classList.remove('bg-emerald-600', 'hover:bg-emerald-500', 'text-white');
-        btnToggleControl.classList.add('bg-slate-800');
-        if (laserCanvas) {
-          laserCanvas.style.cursor = 'crosshair';
-        }
-        if (remoteControlBanner) {
-          if (authorizedUserId) {
-            remoteControlBanner.classList.remove('hidden');
-            remoteControlBannerText.textContent = 'Control asignado a: ' + (authorizedUserName || 'Usuario');
-          } else {
-            remoteControlBanner.classList.add('hidden');
-          }
+      // No soy yo — desactivar control remoto en este cliente
+      isRemoteControlActive = false;
+      btnToggleControl.classList.remove('bg-emerald-600', 'hover:bg-emerald-500', 'text-white');
+      btnToggleControl.classList.add('bg-slate-800');
+      if (controlIcon) controlIcon.className = 'w-4 h-4 text-slate-400';
+      if (laserCanvas) {
+        laserCanvas.style.cursor = 'crosshair';
+      }
+      // El banner solo se muestra al moderador/anfitrión para informar quién tiene el control
+      if (remoteControlBanner) {
+        if (canModerate && authorizedUserId) {
+          remoteControlBanner.classList.remove('hidden');
+          const bannerText = document.getElementById('remoteControlBannerText');
+          if (bannerText) bannerText.textContent = '👁️ Control asignado a: ' + (authorizedUserName || 'Usuario');
+        } else {
+          // Espectadores normales nunca ven el banner si no tienen el control
+          remoteControlBanner.classList.add('hidden');
         }
       }
     }
@@ -2846,4 +2880,89 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (window.lucide) lucide.createIcons();
   }
+
+  // ================= PANEL DE ESTADÍSTICAS WEBRTC EN TIEMPO REAL =================
+  let statsInterval = null;
+  let isStatsVisible = false;
+  const statsOverlay = document.getElementById('statsOverlay');
+  const statsVideo = document.getElementById('statsVideo');
+  const statsNetwork = document.getElementById('statsNetwork');
+  const statsQuality = document.getElementById('statsQuality');
+  const btnToggleStats = document.getElementById('btnToggleStats');
+
+  // Último snapshot de bytes para calcular bitrate real
+  let lastStatsSnapshot = null;
+  let lastStatsTime = 0;
+
+  async function refreshStats() {
+    if (!webrtc || !isStatsVisible) return;
+    try {
+      const allStats = await webrtc.collectStats();
+      if (!allStats || allStats.length === 0) {
+        if (statsVideo) statsVideo.textContent = 'Sin conexiones activas';
+        return;
+      }
+      const now = Date.now();
+      const entry = allStats[0]; // mostrar primer peer
+      const v = entry.video;
+      const n = entry.network;
+
+      if (v) {
+        // Calcular bitrate real entre muestras
+        let bitrateKbps = '—';
+        const bytes = v.bytesSent || v.bytesReceived || 0;
+        if (lastStatsSnapshot && lastStatsTime) {
+          const dt = (now - lastStatsTime) / 1000;
+          const db = bytes - lastStatsSnapshot;
+          if (dt > 0 && db >= 0) {
+            bitrateKbps = Math.round((db * 8) / dt / 1000) + ' kbps';
+          }
+        }
+        lastStatsSnapshot = bytes;
+        lastStatsTime = now;
+        const dir = v.direction === 'send' ? '⬆️' : '⬇️';
+        const res = (v.frameWidth && v.frameHeight) ? v.frameWidth + 'x' + v.frameHeight : '—';
+        const fps = v.framesPerSecond != null ? v.framesPerSecond + ' fps' : '—';
+        const lost = v.packetsLost != null ? 'pkt lost: ' + v.packetsLost : '';
+        if (statsVideo) statsVideo.textContent = dir + ' ' + res + ' @ ' + fps + '  ' + bitrateKbps + (lost ? '  ' + lost : '');
+        if (statsQuality && v.qualityLimitReason && v.qualityLimitReason !== 'none') {
+          statsQuality.textContent = '⚠️ Limitado por: ' + v.qualityLimitReason;
+        } else if (statsQuality) {
+          statsQuality.textContent = '✅ Sin limitación de calidad';
+        }
+      } else {
+        if (statsVideo) statsVideo.textContent = 'Sin track de video';
+      }
+
+      if (n) {
+        const rtt = n.currentRoundTripTime != null ? 'RTT: ' + n.currentRoundTripTime + ' ms' : '';
+        const bw = n.availableOutgoingBitrate != null ? '  BW: ' + n.availableOutgoingBitrate + ' kbps' : '';
+        if (statsNetwork) statsNetwork.textContent = rtt + bw;
+      } else {
+        if (statsNetwork) statsNetwork.textContent = 'Red: —';
+      }
+    } catch (e) {
+      console.warn('Error al refrescar stats:', e);
+    }
+  }
+
+  if (btnToggleStats) {
+    btnToggleStats.addEventListener('click', () => {
+      isStatsVisible = !isStatsVisible;
+      if (statsOverlay) statsOverlay.classList.toggle('hidden', !isStatsVisible);
+      if (isStatsVisible) {
+        btnToggleStats.classList.remove('text-slate-400');
+        btnToggleStats.classList.add('text-emerald-400', 'bg-emerald-950/40', 'border-emerald-500/40');
+        lastStatsSnapshot = null;
+        lastStatsTime = 0;
+        refreshStats();
+        statsInterval = setInterval(refreshStats, 2000);
+      } else {
+        btnToggleStats.classList.add('text-slate-400');
+        btnToggleStats.classList.remove('text-emerald-400', 'bg-emerald-950/40', 'border-emerald-500/40');
+        if (statsInterval) { clearInterval(statsInterval); statsInterval = null; }
+      }
+    });
+  }
+
 });
