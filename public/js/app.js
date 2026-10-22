@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Conecty - Aplicación Principal y Control de Estado UI
  * Modelo AnyDesk: ID Fijo de 9 dígitos por dispositivo, Anti-Modo Espejo,
  * Sistema de Autorización Previa de Conexiones Entrantes,
@@ -185,6 +185,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   myDeviceIdDisplay.textContent = formatDeviceId(myDeviceId);
+  if (typeof updateAgentCommandDisplay === 'function') {
+    updateAgentCommandDisplay();
+  }
 
   // Configuraciones de Usuario Persistentes
   const defaultSettings = {
@@ -462,6 +465,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       myDeviceId = Math.floor(100000000 + Math.random() * 900000000).toString();
       localStorage.setItem('conecty_device_id', myDeviceId);
       myDeviceIdDisplay.textContent = formatDeviceId(myDeviceId);
+  if (typeof updateAgentCommandDisplay === 'function') {
+    updateAgentCommandDisplay();
+  }
       settingDeviceId.value = formatDeviceId(myDeviceId);
       registerMyDeviceOnServer();
       showToast('Nuevo ID de dispositivo generado: ' + formatDeviceId(myDeviceId), 'success');
@@ -917,6 +923,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     currentRoomId = roomId;
     const cleanRoomDisplay = roomId.replace(/^device-/, '');
     headerRoomId.textContent = formatDeviceId(cleanRoomDisplay);
+    if (typeof updateAgentCommandDisplay === 'function') {
+      updateAgentCommandDisplay();
+    }
 
     const newUrl = `${window.location.origin}/?connect=${cleanRoomDisplay}`;
     window.history.pushState({ path: newUrl }, '', newUrl);
@@ -1042,27 +1051,42 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // Asistente Nativo de Control Remoto de Windows (.bat)
+  // Asistente Nativo de Control Remoto de Windows (.bat y PowerShell)
   const btnDownloadAgentCard = document.getElementById('btnDownloadAgentCard');
   const btnCopyAgentCode = document.getElementById('btnCopyAgentCode');
   const btnDownloadAgentSettings = document.getElementById('btnDownloadAgentSettings');
 
+  function getAgentPowerShellCommand() {
+    const activeRoom = currentRoomId || (myDeviceId ? `device-${myDeviceId}` : '');
+    const ps1Url = `${window.location.origin}/api/download-agent-ps1?deviceId=${myDeviceId || ''}&roomId=${activeRoom}`;
+    return `irm "${ps1Url}" | iex`;
+  }
+
+  function updateAgentCommandDisplay() {
+    const cmdDisplay = document.getElementById('cmdAgentDisplay');
+    if (cmdDisplay) {
+      cmdDisplay.textContent = getAgentPowerShellCommand();
+    }
+  }
+
   const downloadAgentHandler = () => {
-    const url = `/api/download-agent?deviceId=${myDeviceId || ''}`;
+    const activeRoom = currentRoomId || (myDeviceId ? `device-${myDeviceId}` : '');
+    const url = `/api/download-agent?deviceId=${myDeviceId || ''}&roomId=${activeRoom}`;
     window.location.href = url;
     showToast('Descargando Conecty-Control.bat...', 'success');
   };
 
   const copyAgentCommandHandler = () => {
-    const cmd = `node agent/conecty-agent.js ${window.location.origin} ${myDeviceId}`;
+    const cmd = getAgentPowerShellCommand();
+    updateAgentCommandDisplay();
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(cmd).then(() => {
-        showToast('📋 Comando copiado al portapapeles', 'success');
+        showToast('📋 Comando de PowerShell copiado al portapapeles', 'success');
       }).catch(() => {
-        prompt('Copia este comando:', cmd);
+        prompt('Copia este comando y pégalo en PowerShell:', cmd);
       });
     } else {
-      prompt('Copia este comando:', cmd);
+      prompt('Copia este comando y pégalo en PowerShell:', cmd);
     }
   };
 
@@ -1079,18 +1103,22 @@ document.addEventListener('DOMContentLoaded', async () => {
       ...actionData
     };
 
-    // Emitir por WebRTC DataChannel primero (latencia ultrabaja)
-    // Si no hay DataChannel abierto, caer en Socket.io como respaldo
-    const sentP2P = webrtc ? webrtc.broadcastData(payload) : false;
-    if (!sentP2P && socket) {
-      // Throttle moves via socket to avoid flooding (DataChannel handles high-freq updates)
+    // 1. Emitir por WebRTC DataChannel (para dibujar el puntero visual en la pantalla remota con 0ms lag)
+    if (webrtc) {
+      webrtc.broadcastData(payload);
+    }
+
+    // 2. Emitir SIEMPRE por WebSocket para que el Asistente Nativo de Windows (Conecty-Agent.ps1)
+    // reciba las coordenadas y ejecute los clics y movimientos físicos en el sistema operativo Windows
+    if (socket && socket.connected) {
       if (actionData.type === 'move') {
         const now = Date.now();
-        if (now - lastSocketMoveTime > 50) {
+        if (now - lastSocketMoveTime > 30) {
           lastSocketMoveTime = now;
           socket.emit('remote-control', payload);
         }
       } else {
+        // Clics, mousedown, mouseup, dblclick, contextmenu, wheel, keydown se envían inmediatamente
         socket.emit('remote-control', payload);
       }
     }
@@ -1451,23 +1479,35 @@ document.addEventListener('DOMContentLoaded', async () => {
         unregisterActiveScreen(userId);
         checkScreenSharingState();
       } else {
-        // Si el usuario remoto comenzó a transmitir pantalla, verificar si ya tenemos el stream
-        setTimeout(() => {
-          if (!activeScreens.has(userId) && user && user.isScreenSharing) {
-            const peerObj = webrtc ? webrtc.peers.get(userId) : null;
-            if (peerObj && peerObj.pc) {
-              const receivers = peerObj.pc.getReceivers ? peerObj.pc.getReceivers() : [];
-              const videoReceiver = receivers.find((r) => r.track && r.track.kind === 'video' && r.track.readyState === 'live');
-              if (videoReceiver && videoReceiver.track) {
-                const stream = peerObj.remoteStream || new MediaStream([videoReceiver.track]);
-                handleRemoteVideo(userId, stream);
-                return;
+        // Asegurar que la pantalla de espera se oculte de inmediato y se prepare el video
+        idleScreen.classList.add('hidden');
+        videoWrapper.classList.remove('hidden');
+
+        const tryAttachStream = () => {
+          const peerObj = webrtc ? webrtc.peers.get(userId) : null;
+          if (peerObj && peerObj.pc) {
+            const receivers = peerObj.pc.getReceivers ? peerObj.pc.getReceivers() : [];
+            const videoReceiver = receivers.find((r) => r.track && r.track.kind === 'video' && r.track.readyState === 'live');
+            if (videoReceiver && videoReceiver.track) {
+              const freshStream = new MediaStream([videoReceiver.track]);
+              peerObj.remoteStream = freshStream;
+              handleRemoteVideo(userId, freshStream);
+              return true;
+            }
+          }
+          return false;
+        };
+
+        if (!tryAttachStream()) {
+          setTimeout(() => {
+            if (!activeScreens.has(userId) && user && user.isScreenSharing) {
+              if (!tryAttachStream()) {
+                console.log(`📡 Solicitando re-transmisión de pantalla a ${userId}...`);
+                socket.emit('request-screen-renegotiation', { sharerId: userId });
               }
             }
-            console.log(`📡 Solicitando re-transmisión de pantalla a ${userId}...`);
-            socket.emit('request-screen-renegotiation', { sharerId: userId });
-          }
-        }, 800);
+          }, 350);
+        }
       }
       renderParticipants();
     });
@@ -2257,7 +2297,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if ('latencyHint' in screenVideo) {
       screenVideo.latencyHint = 0;
     }
-    screenVideo.srcObject = screenData.stream;
+    if (screenVideo.srcObject !== screenData.stream) {
+      screenVideo.srcObject = screenData.stream;
+    }
     
     const playVideo = () => {
       screenVideo.play().catch((e) => console.warn('Error al reproducir video:', e));
@@ -2272,6 +2314,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         track.onunmute = playVideo;
       });
     }
+
+    // Asegurar que la pantalla de espera se oculte y el video se muestre
+    idleScreen.classList.add('hidden');
+    sharerActiveCard.classList.add('hidden');
+    videoWrapper.classList.remove('hidden');
 
     if (id === 'local') {
       sharerNameText.innerHTML = `

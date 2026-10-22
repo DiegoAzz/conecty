@@ -53,7 +53,7 @@ app.get('/api/config', (req, res) => {
 // Descarga directa del componente PowerShell (.ps1)
 app.get('/api/download-agent-ps1', (req, res) => {
   const deviceId = (req.query.deviceId || '').replace(/\D/g, '');
-  const roomId = req.query.roomId || '';
+  const roomId = req.query.roomId || (deviceId ? `device-${deviceId}` : '');
   const serverHost = `${req.protocol}://${req.get('host')}`;
   const ps1Path = path.join(__dirname, 'agent', 'Conecty-Agent.ps1');
 
@@ -64,7 +64,7 @@ app.get('/api/download-agent-ps1', (req, res) => {
     content = `# Conecty Agent`;
   }
 
-  // Preconfigurar host y deviceId en el script si están disponibles
+  // Preconfigurar host, deviceId y roomId en el script si están disponibles
   content = content.replace('[string]$ServerUrl = "https://conecty.appzplay.online"', `[string]$ServerUrl = "${serverHost}"`);
   if (deviceId) {
     content = content.replace('[string]$DeviceId = ""', `[string]$DeviceId = "${deviceId}"`);
@@ -81,7 +81,7 @@ app.get('/api/download-agent-ps1', (req, res) => {
 // Descarga del Asistente de Control Remoto de Windows (.bat)
 app.get('/api/download-agent', (req, res) => {
   const deviceId = (req.query.deviceId || '').replace(/\D/g, '');
-  const roomId = req.query.roomId || '';
+  const roomId = req.query.roomId || (deviceId ? `device-${deviceId}` : '');
   const serverHost = `${req.protocol}://${req.get('host')}`;
 
   const batContent = `@echo off

@@ -43,10 +43,23 @@ public class Win32InputNative {
 
     [DllImport("user32.dll")]
     public static extern bool SetCursorPos(int X, int Y);
+
+    [DllImport("user32.dll")]
+    public static extern bool SetProcessDPIAware();
+
+    [DllImport("user32.dll")]
+    public static extern int GetSystemMetrics(int nIndex);
 }
 "@
 
-$screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+try {
+  [Win32InputNative]::SetProcessDPIAware() | Out-Null
+} catch {}
+
+$screenWidth = [Win32InputNative]::GetSystemMetrics(0) # SM_CXSCREEN
+$screenHeight = [Win32InputNative]::GetSystemMetrics(1) # SM_CYSCREEN
+if ($screenWidth -le 0) { $screenWidth = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width }
+if ($screenHeight -le 0) { $screenHeight = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Height }
 
 $wsUrl = $ServerUrl.Replace("http://", "ws://").Replace("https://", "wss://")
 if (-not $wsUrl.EndsWith("/")) { $wsUrl += "/" }
@@ -117,13 +130,13 @@ while ($ws.State -eq [System.Net.WebSockets.WebSocketState]::Open) {
         $type = $ev.type
 
         if ($type -eq "move" -and $null -ne $ev.x -and $null -ne $ev.y) {
-          $px = [int]($screen.Width * [double]$ev.x)
-          $py = [int]($screen.Height * [double]$ev.y)
+          $px = [int]($screenWidth * [double]$ev.x)
+          $py = [int]($screenHeight * [double]$ev.y)
           [Win32InputNative]::SetCursorPos($px, $py)
         }
         elseif ($type -eq "click" -or $type -eq "mousedown") {
-          $px = [int]($screen.Width * [double]$ev.x)
-          $py = [int]($screen.Height * [double]$ev.y)
+          $px = [int]($screenWidth * [double]$ev.x)
+          $py = [int]($screenHeight * [double]$ev.y)
           [Win32InputNative]::SetCursorPos($px, $py)
 
           $btn = if ($null -ne $ev.button) { [int]$ev.button } else { 0 }
@@ -137,16 +150,16 @@ while ($ws.State -eq [System.Net.WebSockets.WebSocketState]::Open) {
           Write-Host "  [CLIC] en ($px, $py) Boton: $(if ($btn -eq 2) {'Derecho'} else {'Izquierdo'})" -ForegroundColor Green
         }
         elseif ($type -eq "mouseup") {
-          $px = [int]($screen.Width * [double]$ev.x)
-          $py = [int]($screen.Height * [double]$ev.y)
+          $px = [int]($screenWidth * [double]$ev.x)
+          $py = [int]($screenHeight * [double]$ev.y)
           [Win32InputNative]::SetCursorPos($px, $py)
           $btn = if ($null -ne $ev.button) { [int]$ev.button } else { 0 }
           $up  = if ($btn -eq 2) { 0x0010 } else { 0x0004 }
           [Win32InputNative]::mouse_event($up, 0, 0, 0, 0)
         }
         elseif ($type -eq "dblclick") {
-          $px = [int]($screen.Width * [double]$ev.x)
-          $py = [int]($screen.Height * [double]$ev.y)
+          $px = [int]($screenWidth * [double]$ev.x)
+          $py = [int]($screenHeight * [double]$ev.y)
           [Win32InputNative]::SetCursorPos($px, $py)
           [Win32InputNative]::mouse_event(0x0002, 0, 0, 0, 0)
           [Win32InputNative]::mouse_event(0x0004, 0, 0, 0, 0)

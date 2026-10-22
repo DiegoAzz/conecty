@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es" class="h-full bg-slate-950 text-slate-100">
 <head>
   <meta charset="UTF-8">
@@ -1066,7 +1066,7 @@
                   <span>Descargar Asistente (.bat)</span>
                 </button>
                 <div class="flex-1 p-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-indigo-200 flex items-center justify-between">
-                  <code id="cmdAgentDisplay">irm conecty.appzplay.online/api/download-agent | iex</code>
+                  <code id="cmdAgentDisplay">irm "https://conecty.appzplay.online/api/download-agent-ps1" | iex</code>
                   <button id="btnCopyAgentCmd" class="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white" title="Copiar comando">
                     <i data-lucide="copy" class="w-3.5 h-3.5"></i>
                   </button>
@@ -1102,9 +1102,9 @@
 
   <!-- Scripts con versionado para evitar caché obsoleto del navegador -->
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/js/laser.js?v=2.0.5"></script>
-  <script src="/js/webrtc.js?v=2.0.5"></script>
-  <script src="/js/app.js?v=2.0.5"></script>
+  <script src="/js/laser.js?v=2.0.6"></script>
+  <script src="/js/webrtc.js?v=2.0.6"></script>
+  <script src="/js/app.js?v=2.0.6"></script>
   <script>
     // Inicializar iconos de Lucide
     document.addEventListener("DOMContentLoaded", () => {

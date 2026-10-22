@@ -146,15 +146,20 @@ class WebRTCManager {
     // Manejar tracks remotos entrantes (audio o pantalla)
     pc.ontrack = (event) => {
       console.log(`📡 Recibido track remoto (${event.track.kind}) de ${targetId}`);
-      let stream = event.streams && event.streams[0] ? event.streams[0] : null;
-      if (!stream) {
-        peerObj.remoteStream.addTrack(event.track);
-        stream = peerObj.remoteStream;
-      } else {
-        peerObj.remoteStream = stream;
-      }
+      const track = event.track;
+      const stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([track]);
+      peerObj.remoteStream = stream;
+
+      track.onunmute = () => {
+        console.log(`🔊 Track remoto desmuteado (${track.kind}) de ${targetId}`);
+        if (this.onRemoteStream) {
+          const freshStream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([track]);
+          this.onRemoteStream(targetId, freshStream, track);
+        }
+      };
+
       if (this.onRemoteStream) {
-        this.onRemoteStream(targetId, stream, event.track);
+        this.onRemoteStream(targetId, stream, track);
       }
     };
 
@@ -164,6 +169,18 @@ class WebRTCManager {
       if (pc.signalingState === 'stable') {
         // Aplicar perfil de calidad activo al estabilizar la señalización
         this.setQualityProfile(this.qualityProfile || 'auto');
+
+        // Notificar si hay un track de video activo en los receivers para refrescar la visualización
+        const receivers = pc.getReceivers ? pc.getReceivers() : [];
+        const videoReceiver = receivers.find((r) => r.track && r.track.kind === 'video');
+        if (videoReceiver && videoReceiver.track && videoReceiver.track.readyState === 'live') {
+          const vTrack = videoReceiver.track;
+          const freshStream = new MediaStream([vTrack]);
+          peerObj.remoteStream = freshStream;
+          if (this.onRemoteStream) {
+            this.onRemoteStream(targetId, freshStream, vTrack);
+          }
+        }
 
         // Ejecutar re-negociación pendiente si fue encolada mientras no estaba stable
         if (peerObj.renegotiationPending) {
@@ -332,6 +349,16 @@ class WebRTCManager {
 
       for (const [peerId, peerObj] of this.peers.entries()) {
         const pc = peerObj.pc;
+
+        // Restablecer transceiver de video a 'recvonly' para notificar al otro extremo en SDP
+        const transceivers = pc.getTransceivers ? pc.getTransceivers() : [];
+        const videoTransceiver = transceivers.find((t) => (t.receiver && t.receiver.track && t.receiver.track.kind === 'video') || (t.sender && t.sender.track && t.sender.track.kind === 'video'));
+        if (videoTransceiver) {
+          try {
+            videoTransceiver.direction = 'recvonly';
+          } catch (e) {}
+        }
+
         if (peerObj.screenSenders && peerObj.screenSenders.length > 0) {
           peerObj.screenSenders.forEach((sender) => {
             try {
