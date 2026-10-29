@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="es" class="h-full bg-slate-950 text-slate-100">
+<html lang="es" class="h-full bg-[#13161c] text-slate-100">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Conecty - Asistencia Remota y Llamadas en Vivo</title>
+  <title>RustDesk Web - Software de Escritorio Remoto de Código Abierto</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -12,45 +12,68 @@
       theme: {
         extend: {
           colors: {
-            brand: {
-              50: '#eef2ff',
-              100: '#e0e7ff',
-              500: '#6366f1',
-              600: '#4f46e5',
-              700: '#4338ca',
+            rust: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              400: '#60a5fa',
+              500: '#3b82f6',
+              600: '#0d6efd',
+              700: '#1d4ed8',
+              800: '#1e40af',
+              900: '#1e3a8a',
+            },
+            surface: {
+              base: '#13161c',
+              card: '#1b2029',
+              cardHover: '#222834',
+              input: '#11141a',
+              border: '#2c3340',
+              borderHighlight: '#3c4556'
             }
           }
         }
       }
     }
   </script>
-  <!-- Google Fonts -->
+  <!-- Google Fonts: Plus Jakarta Sans / Inter & JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
   <style>
     body {
       font-family: 'Plus Jakarta Sans', sans-serif;
     }
-    .glass-panel {
-      background: rgba(15, 23, 42, 0.75);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+    .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .rust-panel {
+      background: #1b2029;
+      border: 1px solid #2c3340;
+    }
+    .rust-input {
+      background: #11141a;
+      border: 1px solid #363e4f;
+    }
+    .rust-input:focus {
+      border-color: #0d6efd;
+      box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.25);
     }
     .custom-scrollbar::-webkit-scrollbar {
       width: 6px;
+      height: 6px;
     }
     .custom-scrollbar::-webkit-scrollbar-track {
-      background: rgba(0,0,0,0.2);
+      background: rgba(0,0,0,0.25);
     }
     .custom-scrollbar::-webkit-scrollbar-thumb {
-      background: rgba(255,255,255,0.15);
+      background: #363e4f;
       border-radius: 9999px;
     }
-    /* Animación de pulso láser */
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
     @keyframes ping-slow {
       0% { transform: scale(0.5); opacity: 1; }
       100% { transform: scale(2.5); opacity: 0; }
@@ -65,7 +88,6 @@
     .rec-pulse {
       animation: ping-slow 1.2s cubic-bezier(0, 0, 0.2, 1) infinite;
     }
-    /* Ecualizador animado de voz */
     @keyframes eq-wave {
       0%, 100% { height: 4px; }
       50% { height: 16px; }
@@ -75,762 +97,792 @@
     .eq-bar-3 { animation: eq-wave 0.4s ease-in-out infinite 0.3s; }
   </style>
 </head>
-<body class="h-full flex flex-col overflow-hidden select-none">
+<body class="h-full flex flex-col overflow-hidden select-none bg-[#13161c]">
 
-  <!-- ================= VISTA DE LOBBY / INGRESO (ESTILO ANYDESK CON ID FIJO) ================= -->
-  <div id="lobbyView" class="fixed inset-0 z-40 flex items-center justify-center p-4 bg-slate-950/95 backdrop-blur-md overflow-y-auto custom-scrollbar">
+  <!-- ================= VISTA DE LOBBY / INGRESO (ESTILO RUSTDESK WEB CLIENT) ================= -->
+  <div id="lobbyView" class="fixed inset-0 z-40 flex flex-col bg-[#13161c] overflow-y-auto custom-scrollbar">
     
-    <!-- Botón Configuración en Lobby -->
-    <button id="btnOpenSettingsLobby" class="absolute top-6 right-6 px-3.5 py-2 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-700/80 text-slate-300 hover:text-white transition shadow flex items-center space-x-2 text-xs">
-      <i data-lucide="settings" class="w-4 h-4 text-indigo-400"></i>
-      <span class="hidden sm:inline font-semibold">Configuración</span>
-    </button>
-
-    <div class="w-full max-w-4xl py-6 flex flex-col items-center">
-      
-      <!-- Logo Superior -->
-      <div class="text-center mb-8 relative">
-        <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600/20 text-indigo-400 mb-3 border border-indigo-500/30 shadow-lg shadow-indigo-600/20">
-          <i data-lucide="radio" class="w-8 h-8"></i>
+    <!-- BARRA SUPERIOR DE NAVEGACIÓN RUSTDESK -->
+    <header class="h-16 px-4 md:px-8 bg-[#181d25] border-b border-[#2c3340] flex items-center justify-between shrink-0 z-10 shadow-sm">
+      <div class="flex items-center space-x-3">
+        <!-- Logo RustDesk -->
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-[#0d6efd] to-[#0b5ed7] text-white flex items-center justify-center shadow-lg shadow-blue-500/20 font-bold">
+          <i data-lucide="monitor" class="w-5 h-5"></i>
         </div>
-        <h1 class="text-3xl font-extrabold tracking-tight text-white mb-1">Conecty</h1>
-        <p class="text-xs md:text-sm text-slate-400">Asistencia remota interactiva, control de teclado/ratón, llamadas de voz y pantalla en vivo.</p>
+        <div>
+          <div class="flex items-center space-x-2">
+            <span class="text-base font-extrabold tracking-tight text-white">RustDesk</span>
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#0d6efd]/15 text-[#60a5fa] border border-[#0d6efd]/30 uppercase tracking-wider">
+              Web Client
+            </span>
+          </div>
+          <p class="text-[11px] text-slate-400">Escritorio remoto de código abierto y transferencia de archivos</p>
+        </div>
       </div>
 
+      <!-- Estado del Servidor & Acciones Rápidas -->
+      <div class="flex items-center space-x-2 md:space-x-3">
+        <!-- Indicador de Red / Relay -->
+        <div class="hidden sm:flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-[#11141a] border border-[#2c3340] text-xs">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span class="text-slate-300 font-medium">Listo <span class="text-slate-500 font-mono text-[10px]">(Servidor Relay P2P)</span></span>
+        </div>
+
+        <!-- Botón Configuración en Lobby -->
+        <button id="btnOpenSettingsLobby" class="px-3.5 py-2 rounded-xl bg-[#1b2029] hover:bg-[#222834] border border-[#2c3340] text-slate-300 hover:text-white transition flex items-center space-x-2 text-xs font-semibold shadow-sm" title="Ajustes de RustDesk">
+          <i data-lucide="settings" class="w-4 h-4 text-[#60a5fa]"></i>
+          <span class="hidden md:inline">Configuración</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- CONTENEDOR PRINCIPAL DEL DASHBOARD -->
+    <main class="flex-1 max-w-6xl w-full mx-auto p-4 md:p-8 flex flex-col justify-start">
+
       <!-- Banner de Invitación Directa Detectada -->
-      <div id="inviteBanner" class="w-full mb-6 p-4 rounded-3xl glass-panel border border-emerald-500/40 bg-emerald-950/30 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl hidden">
+      <div id="inviteBanner" class="w-full mb-6 p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl hidden">
         <div class="flex items-center space-x-3 text-left">
-          <div class="w-10 h-10 rounded-2xl bg-emerald-600/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30">
+          <div class="w-10 h-10 rounded-xl bg-emerald-600/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30">
             <i data-lucide="link" class="w-5 h-5"></i>
           </div>
           <div>
             <div class="text-xs font-bold text-white flex items-center space-x-1.5">
-              <span>Invitación de Conexión Recibida</span>
+              <span>Invitación de Conexión Directa</span>
               <span class="px-2 py-0.5 rounded-full text-[10px] bg-emerald-500/20 text-emerald-300 font-mono font-bold" id="inviteTargetDisplay">--- --- ---</span>
             </div>
-            <p class="text-[11px] text-slate-300">Te han invitado a conectarte directamente a este puesto de asistencia remota.</p>
+            <p class="text-[11px] text-slate-300">Te han invitado a conectarte directamente a este equipo remoto.</p>
           </div>
         </div>
-        <button id="btnAcceptInviteDirect" class="w-full sm:w-auto px-5 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white font-semibold text-xs transition shadow-lg shadow-emerald-600/30 flex items-center justify-center space-x-2 shrink-0">
+        <button id="btnAcceptInviteDirect" class="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-[#0d6efd] hover:bg-[#0b5ed7] text-white font-semibold text-xs transition shadow-lg flex items-center justify-center space-x-2 shrink-0">
           <i data-lucide="zap" class="w-4 h-4"></i>
-          <span>Unirme a esta Sesión Ahora</span>
+          <span>Conectar a esta Sesión</span>
         </button>
       </div>
 
-      <!-- Cuadrícula Doble Estilo AnyDesk -->
-      <div class="w-full grid grid-cols-1 md:grid-cols-2 gap-6">
+      <!-- CUADRÍCULA PRINCIPAL RUSTDESK (2 COLUMNAS) -->
+      <div class="w-full grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
-        <!-- TARJETA 1: ESTE DISPOSITIVO (TU PUESTO DE TRABAJO CON ID FIJO) -->
-        <div class="glass-panel p-6 md:p-8 rounded-3xl border border-indigo-500/25 shadow-2xl relative overflow-hidden flex flex-col justify-between">
-          <div class="absolute -top-16 -left-16 w-48 h-48 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none"></div>
-
-          <div>
-            <div class="flex items-center justify-between mb-4">
-              <span class="text-xs font-bold tracking-wider text-indigo-400 uppercase flex items-center">
-                <i data-lucide="laptop" class="w-4 h-4 mr-1.5"></i> Este Dispositivo
-              </span>
-              <span class="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center">
+        <!-- COLUMNA IZQUIERDA (5 COLS): ESTE ESCRITORIO (YOUR DESKTOP) -->
+        <div class="lg:col-span-5 rust-panel p-6 rounded-2xl shadow-xl flex flex-col justify-between relative overflow-hidden">
+          <div class="space-y-5">
+            <!-- Header de Este Escritorio -->
+            <div class="flex items-center justify-between pb-3 border-b border-[#2c3340]">
+              <div class="flex items-center space-x-2">
+                <i data-lucide="laptop" class="w-4 h-4 text-[#60a5fa]"></i>
+                <h2 class="text-xs font-bold tracking-wider text-slate-200 uppercase">Este Escritorio</h2>
+              </div>
+              <span class="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center">
                 <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5 animate-pulse"></span>
-                Listo para Conexión
+                Listo
               </span>
             </div>
 
-            <p class="text-xs text-slate-400 mb-4">Tu dirección permanente para que otros se conecten a tu equipo:</p>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              Comparte tu ID y contraseña para permitir que alguien controle este escritorio o te transfiera archivos:
+            </p>
 
-            <!-- ID ÚNICO FIJO DE ESTE DISPOSITIVO (9 DÍGITOS) -->
-            <div class="p-4 rounded-2xl bg-slate-900/90 border border-slate-700/80 mb-5 relative group">
-              <div class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Tu Número Conecty</div>
+            <!-- 1. SU ID (9 DÍGITOS RUSTDESK) -->
+            <div class="p-4 rounded-xl rust-input relative">
+              <div class="flex items-center justify-between mb-1">
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Su ID</span>
+                <span class="text-[10px] text-slate-500">ID Permanente</span>
+              </div>
               <div class="flex items-center justify-between">
-                <div id="myDeviceIdDisplay" class="font-mono text-2xl md:text-3xl font-extrabold tracking-widest text-indigo-300">
+                <div id="myDeviceIdDisplay" class="font-mono text-2xl md:text-3xl font-extrabold tracking-widest text-[#60a5fa]">
                   --- --- ---
                 </div>
                 <div class="flex items-center space-x-1.5">
-                  <button id="btnCopyMyId" class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition" title="Copiar ID numérico">
+                  <button id="btnCopyMyId" class="p-2 rounded-lg bg-[#1b2029] hover:bg-[#222834] text-slate-300 hover:text-white border border-[#2c3340] transition" title="Copiar ID">
                     <i data-lucide="copy" class="w-4 h-4"></i>
                   </button>
-                  <button id="btnCopyMyDirectLink" class="p-2 rounded-xl bg-indigo-600/30 hover:bg-indigo-600 text-indigo-300 hover:text-white transition" title="Copiar enlace directo">
+                  <button id="btnCopyMyDirectLink" class="p-2 rounded-lg bg-[#0d6efd]/20 hover:bg-[#0d6efd] text-[#60a5fa] hover:text-white border border-[#0d6efd]/40 transition" title="Copiar enlace web de invitación">
                     <i data-lucide="link" class="w-4 h-4"></i>
                   </button>
                 </div>
               </div>
             </div>
 
-            <!-- Nombre de usuario -->
-            <div class="mb-5 text-left">
-              <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">Tu Nombre o Alias</label>
+            <!-- 2. CONTRASEÑA DE UN SOLO USO (ONE-TIME PASSWORD) -->
+            <div class="p-4 rounded-xl rust-input relative">
+              <div class="flex items-center justify-between mb-1">
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Contraseña de un solo uso</span>
+                <span class="text-[10px] text-emerald-400 font-semibold flex items-center">
+                  <i data-lucide="shield" class="w-3 h-3 mr-1"></i> Temporal
+                </span>
+              </div>
+              <div class="flex items-center justify-between">
+                <input type="password" id="myPasswordDisplay" readonly value="------" class="font-mono text-xl md:text-2xl font-bold tracking-widest text-slate-200 bg-transparent border-0 focus:outline-none w-36 select-all">
+                <div class="flex items-center space-x-1">
+                  <!-- Mostrar / Ocultar Contraseña -->
+                  <button id="btnTogglePasswordVisibility" class="p-2 rounded-lg bg-[#1b2029] hover:bg-[#222834] text-slate-300 hover:text-white border border-[#2c3340] transition" title="Mostrar/Ocultar contraseña">
+                    <i data-lucide="eye" id="passwordEyeIcon" class="w-4 h-4"></i>
+                  </button>
+                  <!-- Regenerar Contraseña Aleatoria -->
+                  <button id="btnRegenPassword" class="p-2 rounded-lg bg-[#1b2029] hover:bg-[#222834] text-slate-300 hover:text-white border border-[#2c3340] transition" title="Generar nueva contraseña">
+                    <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                  </button>
+                  <!-- Copiar Contraseña -->
+                  <button id="btnCopyPassword" class="p-2 rounded-lg bg-[#1b2029] hover:bg-[#222834] text-slate-300 hover:text-white border border-[#2c3340] transition" title="Copiar contraseña">
+                    <i data-lucide="copy" class="w-4 h-4"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 3. ACCESO DESATENDIDO / CONTRASEÑA PERMANENTE -->
+            <div class="p-3.5 rounded-xl bg-[#11141a]/60 border border-[#2c3340] flex items-center justify-between text-xs">
+              <div class="space-y-0.5">
+                <div class="flex items-center space-x-1.5 font-semibold text-slate-200">
+                  <i data-lucide="lock" class="w-3.5 h-3.5 text-amber-400"></i>
+                  <span>Acceso Desatendido</span>
+                </div>
+                <p id="unattendedStatusText" class="text-[11px] text-slate-400">Configura una contraseña fija para conectar sin aprobación manual</p>
+              </div>
+              <button id="btnOpenUnattendedSettings" class="px-2.5 py-1.5 rounded-lg bg-[#1b2029] hover:bg-[#222834] text-slate-200 text-[11px] font-semibold border border-[#2c3340] transition shrink-0">
+                Configurar
+              </button>
+            </div>
+
+            <!-- 4. NOMBRE DE USUARIO / ALIAS LOCAL -->
+            <div class="text-left">
+              <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">Nombre de este Equipo</label>
               <div class="relative">
                 <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
                   <i data-lucide="user" class="w-4 h-4"></i>
                 </span>
-                <input type="text" id="userNameInput" required placeholder="Ej. Diego" class="w-full pl-10 pr-4 py-3 bg-slate-900/80 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition text-sm">
+                <input type="text" id="userNameInput" required placeholder="Ej. Mi PC de Oficina" class="w-full pl-10 pr-4 py-2.5 rust-input rounded-xl text-white placeholder-slate-500 text-xs">
               </div>
             </div>
           </div>
 
-          <button id="btnWaitConnection" class="w-full py-3.5 px-4 bg-slate-800 hover:bg-slate-700 text-white font-semibold rounded-xl border border-slate-700 transition flex items-center justify-center space-x-2 shadow-lg">
-            <i data-lucide="clock" class="w-4 h-4 text-indigo-400"></i>
-            <span>Abrir y Esperar Conexión</span>
-          </button>
+          <!-- BOTÓN ABRIR Y ESPERAR CONEXIÓN -->
+          <div class="mt-6 pt-4 border-t border-[#2c3340]">
+            <button id="btnWaitConnection" class="w-full py-3 px-4 bg-[#11141a] hover:bg-[#181d25] text-slate-200 hover:text-white font-semibold rounded-xl border border-[#2c3340] transition flex items-center justify-center space-x-2 text-xs shadow-sm">
+              <i data-lucide="monitor-play" class="w-4 h-4 text-[#60a5fa]"></i>
+              <span>Abrir Puesto y Esperar Conexión</span>
+            </button>
+          </div>
         </div>
 
-        <!-- TARJETA 2: OTRO DISPOSITIVO (CONECTAR A OTRA MÁQUINA) -->
-        <div class="glass-panel p-6 md:p-8 rounded-3xl border border-slate-800 shadow-2xl relative overflow-hidden flex flex-col justify-between">
-          <div class="absolute -top-16 -right-16 w-48 h-48 bg-emerald-600/10 rounded-full blur-3xl pointer-events-none"></div>
-
-          <div>
-            <div class="flex items-center justify-between mb-4">
-              <span class="text-xs font-bold tracking-wider text-slate-300 uppercase flex items-center">
-                <i data-lucide="remote-control" class="w-4 h-4 mr-1.5 text-emerald-400"></i> Conectar a Otro Dispositivo
+        <!-- COLUMNA DERECHA (7 COLS): CONTROLAR ESCRITORIO REMOTO (REMOTE CONTROL) -->
+        <div class="lg:col-span-7 space-y-6">
+          
+          <div class="rust-panel p-6 rounded-2xl shadow-xl space-y-5">
+            <!-- Header de Control Remoto -->
+            <div class="flex items-center justify-between pb-3 border-b border-[#2c3340]">
+              <div class="flex items-center space-x-2">
+                <i data-lucide="arrow-right-circle" class="w-4 h-4 text-[#0d6efd]"></i>
+                <h2 class="text-xs font-bold tracking-wider text-slate-200 uppercase">Controlar Escritorio Remoto</h2>
+              </div>
+              <span class="text-[11px] text-slate-400 flex items-center">
+                <i data-lucide="shield-check" class="w-3.5 h-3.5 mr-1 text-emerald-400"></i> Cifrado P2P DTLS
               </span>
             </div>
 
-            <p class="text-xs text-slate-400 mb-4">Introduce el número permanente de 9 dígitos del equipo que deseas controlar o asistir:</p>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              Introduce el ID numérico de 9 dígitos del equipo que deseas controlar o al cual enviar archivos:
+            </p>
 
-            <form id="connectRemoteForm" class="space-y-5 text-left">
+            <!-- FORMULARIO DE CONEXIÓN RUSTDESK -->
+            <form id="connectRemoteForm" class="space-y-4">
               <div>
-                <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">Número Conecty del Destino</label>
+                <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">ID de Compañero</label>
                 <div class="relative">
-                  <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
-                    <i data-lucide="hash" class="w-4 h-4"></i>
+                  <span class="absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400">
+                    <i data-lucide="hash" class="w-5 h-5"></i>
                   </span>
-                  <input type="text" id="targetDeviceIdInput" required maxlength="11" placeholder="Ej. 492 839 104" class="w-full pl-10 pr-4 py-3.5 bg-slate-900/90 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition font-mono text-xl tracking-widest">
+                  <input type="text" id="targetDeviceIdInput" required maxlength="11" placeholder="Ej. 492 839 104" class="w-full pl-12 pr-4 py-3.5 rust-input rounded-xl text-white placeholder-slate-600 focus:outline-none transition font-mono text-2xl font-bold tracking-widest">
                 </div>
               </div>
 
-              <div class="p-3.5 rounded-2xl bg-slate-900/40 border border-slate-800 text-[11px] text-slate-400 leading-relaxed">
-                🛡️ <strong class="text-slate-300">Acceso Seguro con Autorización</strong>: El anfitrión del equipo deberá aprobar tu solicitud en pantalla antes de conectar.
-              </div>
+              <!-- BOTONES DE ACCIÓN: CONECTAR ESCRITORIO Y TRANSFERIR ARCHIVOS -->
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                <!-- Botón 1: Conectar Escritorio Remoto -->
+                <button type="submit" id="btnConnectRemote" class="py-3 px-4 bg-[#0d6efd] hover:bg-[#0b5ed7] text-white font-bold rounded-xl shadow-lg shadow-blue-600/20 transition flex items-center justify-center space-x-2 text-xs">
+                  <i data-lucide="screen-share" class="w-4 h-4"></i>
+                  <span>Conectar Escritorio</span>
+                </button>
 
-              <button type="submit" id="btnConnectRemote" class="w-full py-3.5 px-4 bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white font-semibold rounded-xl shadow-lg shadow-indigo-600/30 transition flex items-center justify-center space-x-2">
-                <span>Conectar con este Dispositivo</span>
-                <i data-lucide="arrow-right" class="w-4 h-4"></i>
-              </button>
+                <!-- Botón 2: Transferir Archivos -->
+                <button type="button" id="btnStartFileTransferLobby" class="py-3 px-4 bg-[#11141a] hover:bg-[#181d25] text-slate-200 hover:text-white font-bold rounded-xl border border-[#2c3340] transition flex items-center justify-center space-x-2 text-xs">
+                  <i data-lucide="folder-sync" class="w-4 h-4 text-amber-400"></i>
+                  <span>Transferir Archivos</span>
+                </button>
+              </div>
             </form>
+
+            <!-- Info de Ayuda Rápida -->
+            <div class="p-3.5 rounded-xl bg-[#11141a]/60 border border-[#2c3340] text-[11px] text-slate-400 flex items-start space-x-2.5">
+              <i data-lucide="info" class="w-4 h-4 text-[#60a5fa] shrink-0 mt-0.5"></i>
+              <div class="space-y-0.5">
+                <span class="text-slate-300 font-semibold">Opciones de Conexión:</span>
+                <p>Puedes conectar introduciendo la contraseña del equipo destino (acceso desatendido) o solicitando que el usuario presione "Aceptar" en pantalla.</p>
+              </div>
+            </div>
           </div>
 
-          <div class="mt-6 pt-4 border-t border-slate-800 text-xs text-slate-500 flex items-center justify-center space-x-4">
-            <span class="flex items-center"><i data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-400 mr-1"></i> Autorización Previa</span>
-            <span class="flex items-center"><i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400 mr-1"></i> DTLS P2P Cifrado</span>
+          <!-- ASISTENTE NATIVO DE WINDOWS (TARJETA INFORMATIVA DE CONTROL OS FÍSICO) -->
+          <div class="rust-panel p-5 rounded-2xl shadow-xl space-y-3">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center space-x-2">
+                <i data-lucide="cpu" class="w-4 h-4 text-emerald-400"></i>
+                <h3 class="text-xs font-bold text-slate-200">Asistente de Control Total de Windows</h3>
+              </div>
+              <span id="agentStatusBadge" class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#11141a] text-slate-400 border border-[#2c3340]">
+                Asistente No Conectado
+              </span>
+            </div>
+            <p id="agentStatusDesc" class="text-[11px] text-slate-400 leading-relaxed">
+              Para permitir clics físicos fuera del navegador sobre cualquier app de Windows (Edge, YouTube, etc.), ejecuta el asistente nativo de 1 clic:
+            </p>
+            <div id="agentActionsRow" class="flex flex-col sm:flex-row gap-2 pt-1">
+              <button id="btnDownloadAgentCard" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl text-xs flex items-center justify-center space-x-1.5 transition">
+                <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                <span>Descargar Asistente (.bat)</span>
+              </button>
+              <div class="flex-1 p-2 rounded-xl rust-input font-mono text-[11px] text-indigo-200 flex items-center justify-between">
+                <code id="cmdAgentDisplay" class="truncate max-w-[280px]">irm "https://conecty.appzplay.online/api/download-agent-ps1" | iex</code>
+                <button id="btnCopyAgentCode" class="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white shrink-0 ml-1" title="Copiar comando">
+                  <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                </button>
+              </div>
+            </div>
+            <!-- Alert de agente conectado -->
+            <div id="agentConnectedAlert" class="hidden p-2.5 rounded-xl bg-emerald-950/60 border border-emerald-600/50 flex items-center space-x-2 text-emerald-200 text-xs">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+              <span class="font-medium">Asistente de Windows Conectado: Clics físicos y control total activo en el sistema.</span>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- SECCIÓN: LIBRETA DE DIRECCIONES / SESIONES RECIENTES (RUSTDESK ADDRESS BOOK) -->
+      <div id="savedSessionsSection" class="w-full mt-6 rust-panel p-6 rounded-2xl shadow-xl hidden">
+        <div class="flex items-center justify-between mb-4 pb-3 border-b border-[#2c3340]">
+          <div class="flex items-center space-x-2">
+            <i data-lucide="book-bookmark" class="w-4 h-4 text-[#60a5fa]"></i>
+            <h2 class="text-xs font-bold uppercase tracking-wider text-slate-200">Libreta de Direcciones y Equipos Recientes</h2>
+          </div>
+          <span id="savedSessionsCount" class="text-[11px] text-slate-400 font-mono">0 equipos</span>
+        </div>
+        <div id="savedSessionsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <!-- Inyectado dinámicamente con tarjetas estilo RustDesk -->
+        </div>
+      </div>
+
+    </main>
+
+  </div>
+
+  <!-- ================= MODAL DE AUTENTICACIÓN / CONTRASEÑA RUSTDESK ================= -->
+  <div id="passwordModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md hidden transition-all duration-200">
+    <div class="w-full max-w-md rust-panel rounded-2xl shadow-2xl overflow-hidden border border-[#2c3340] animate-in fade-in zoom-in-95 duration-150">
+      <div class="h-14 px-5 border-b border-[#2c3340] bg-[#181d25] flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <i data-lucide="key-round" class="w-4 h-4 text-[#0d6efd]"></i>
+          <h3 class="text-sm font-bold text-white">Autenticación Remota</h3>
+        </div>
+        <button id="btnClosePasswordModal" class="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="p-5 space-y-4 text-left">
+        <div>
+          <span class="text-xs text-slate-400">Conectando al equipo:</span>
+          <div id="targetPasswordModalDisplay" class="font-mono text-xl font-extrabold text-[#60a5fa] mt-0.5">--- --- ---</div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">Contraseña del Equipo Remoto</label>
+          <div class="relative">
+            <input type="password" id="remotePasswordInput" placeholder="Introduce la contraseña" class="w-full px-4 py-2.5 rust-input rounded-xl text-white placeholder-slate-600 focus:outline-none font-mono text-sm">
+            <button type="button" id="btnToggleRemotePassVisibility" class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-white">
+              <i data-lucide="eye" id="remotePassEyeIcon" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between pt-1">
+          <label class="flex items-center space-x-2 text-xs text-slate-400 cursor-pointer">
+            <input type="checkbox" id="rememberPasswordCheck" class="rounded bg-slate-900 border-slate-700 text-[#0d6efd] focus:ring-0">
+            <span>Recordar contraseña en este equipo</span>
+          </label>
+        </div>
+
+        <div class="space-y-2 pt-2">
+          <!-- Botón de Conexión Inmediata con Contraseña -->
+          <button id="btnConnectWithPassword" class="w-full py-2.5 px-4 bg-[#0d6efd] hover:bg-[#0b5ed7] text-white font-bold rounded-xl shadow transition flex items-center justify-center space-x-2 text-xs">
+            <i data-lucide="unlock" class="w-4 h-4"></i>
+            <span>Conectar con Contraseña</span>
+          </button>
+
+          <!-- Separador -->
+          <div class="relative flex py-1 items-center">
+            <div class="flex-grow border-t border-[#2c3340]"></div>
+            <span class="flex-shrink mx-3 text-[10px] text-slate-500 uppercase tracking-widest font-semibold">O bien</span>
+            <div class="flex-grow border-t border-[#2c3340]"></div>
+          </div>
+
+          <!-- Botón de Solicitud Manual en Pantalla -->
+          <button id="btnRequestManualApproval" class="w-full py-2.5 px-4 bg-[#11141a] hover:bg-[#181d25] text-slate-300 hover:text-white font-medium rounded-xl border border-[#2c3340] transition flex items-center justify-center space-x-2 text-xs">
+            <i data-lucide="user-check" class="w-4 h-4 text-emerald-400"></i>
+            <span>Solicitar Aprobación en Pantalla</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= MODAL DE TRANSFERENCIA DE ARCHIVOS P2P ================= -->
+  <div id="fileTransferModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md hidden transition-all duration-200">
+    <div class="w-full max-w-3xl rust-panel rounded-2xl shadow-2xl overflow-hidden border border-[#2c3340] flex flex-col max-h-[85vh]">
+      
+      <!-- Header de Transferencia de Archivos -->
+      <div class="h-14 px-6 border-b border-[#2c3340] bg-[#181d25] flex items-center justify-between shrink-0">
+        <div class="flex items-center space-x-2.5">
+          <div class="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
+            <i data-lucide="folder-sync" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-white">Transferencia de Archivos P2P</h3>
+            <span id="fileTransferPeerDisplay" class="text-[11px] text-slate-400 font-mono">Conectado a: ---</span>
+          </div>
+        </div>
+        <button id="btnCloseFileTransfer" class="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Cuerpo Dividido en 2 Columnas (Local / Remoto) -->
+      <div class="flex-1 grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-[#2c3340] overflow-y-auto custom-scrollbar p-4 gap-4">
+        
+        <!-- COLUMNA IZQUIERDA: ENVIAR ARCHIVOS DESDE MI EQUIPO -->
+        <div class="space-y-3 flex flex-col justify-between">
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center">
+                <i data-lucide="upload" class="w-3.5 h-3.5 mr-1.5 text-blue-400"></i> Mi Equipo (Enviar)
+              </span>
+              <span class="text-[10px] text-slate-500">Local</span>
+            </div>
+
+            <!-- Zona Drag & Drop -->
+            <div id="dropZone" class="border-2 border-dashed border-[#2c3340] hover:border-[#0d6efd] rounded-xl p-6 text-center cursor-pointer transition bg-[#11141a]/60 space-y-2">
+              <input type="file" id="localFileInput" class="hidden" multiple>
+              <i data-lucide="file-up" class="w-8 h-8 mx-auto text-slate-400"></i>
+              <div class="text-xs font-semibold text-slate-300">Arrastra archivos aquí o haz clic</div>
+              <p class="text-[10px] text-slate-500">Soporta cualquier tamaño mediante chunks P2P</p>
+            </div>
+
+            <!-- Cola de Archivos a Enviar -->
+            <div id="localFilesQueue" class="space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
+              <!-- Elementos añadidos dinámicamente -->
+            </div>
+          </div>
+
+          <button id="btnSendFiles" disabled class="w-full py-2.5 px-4 bg-[#0d6efd] disabled:opacity-40 hover:bg-[#0b5ed7] text-white font-bold rounded-xl text-xs transition flex items-center justify-center space-x-2">
+            <i data-lucide="send" class="w-4 h-4"></i>
+            <span>Enviar Archivo al Equipo Remoto</span>
+          </button>
+        </div>
+
+        <!-- COLUMNA DERECHA: ARCHIVOS RECIBIDOS -->
+        <div class="space-y-3 flex flex-col justify-between pt-4 md:pt-0">
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center">
+                <i data-lucide="download" class="w-3.5 h-3.5 mr-1.5 text-emerald-400"></i> Archivos Recibidos
+              </span>
+              <span id="receivedFilesCount" class="text-[10px] text-slate-500">0 archivos</span>
+            </div>
+
+            <div id="remoteFilesList" class="space-y-2 max-h-64 overflow-y-auto custom-scrollbar">
+              <div id="emptyReceivedNotice" class="p-6 text-center text-slate-500 text-xs rounded-xl bg-[#11141a]/40 border border-[#2c3340]">
+                Aún no has recibido archivos en esta sesión.
+              </div>
+            </div>
           </div>
         </div>
 
       </div>
 
-      <!-- SECCIÓN DE HISTORIAL Y PUESTOS GUARDADOS (LIBRETA DE DIRECCIONES) -->
-      <div id="savedSessionsSection" class="w-full mt-6 glass-panel p-6 rounded-3xl border border-slate-800 shadow-xl hidden">
-        <div class="flex items-center justify-between mb-4">
-          <div class="flex items-center space-x-2">
-            <i data-lucide="bookmark" class="w-4 h-4 text-indigo-400"></i>
-            <h2 class="text-xs font-bold uppercase tracking-wider text-slate-300">Puestos Recientes y Guardados</h2>
-          </div>
-          <span id="savedSessionsCount" class="text-[11px] text-slate-500 font-mono">0 equipos</span>
+      <!-- Barra de Progreso en Vivo en el Footer -->
+      <div id="fileTransferProgressContainer" class="p-4 border-t border-[#2c3340] bg-[#11141a] hidden space-y-2 shrink-0">
+        <div class="flex items-center justify-between text-xs">
+          <span id="fileTransferProgressText" class="text-slate-300 font-semibold truncate max-w-[400px]">Transfiriendo archivo...</span>
+          <span id="fileTransferProgressPercent" class="font-mono text-emerald-400 font-bold">0%</span>
         </div>
-        <div id="savedSessionsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          <!-- Inyectado dinámicamente -->
+        <div class="h-2 bg-slate-800 rounded-full overflow-hidden">
+          <div id="fileTransferProgressFill" class="h-full bg-gradient-to-r from-blue-500 to-emerald-400 w-0 transition-all duration-75"></div>
         </div>
       </div>
 
     </div>
   </div>
 
-  <!-- ================= INTERFAZ PRINCIPAL DE LA SALA ================= -->
-  <div id="roomView" class="h-full flex flex-col hidden relative">
+  <!-- ================= INTERFAZ PRINCIPAL DE LA SALA (REMOTE DESKTOP STAGE) ================= -->
+  <div id="roomView" class="h-full flex flex-col hidden relative bg-[#13161c]">
     
-    <!-- BARRA SUPERIOR (HEADER) -->
-    <header class="h-16 px-4 md:px-6 glass-panel flex items-center justify-between z-20 border-b border-slate-800/80">
+    <!-- BARRA SUPERIOR FLOTANTE DE SESIÓN (RUSTDESK FLOATING TOOLBAR) -->
+    <header class="h-14 px-4 md:px-6 bg-[#181d25] border-b border-[#2c3340] flex items-center justify-between z-30 shadow-md shrink-0">
+      <!-- Identidad y Sala -->
       <div class="flex items-center space-x-3">
-        <div class="w-9 h-9 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
-          <i data-lucide="radio" class="w-5 h-5"></i>
+        <div class="w-8 h-8 rounded-lg bg-[#0d6efd] text-white flex items-center justify-center font-bold shadow-md">
+          <i data-lucide="monitor" class="w-4 h-4"></i>
         </div>
-        <div>
-          <div class="flex items-center space-x-2">
-            <span class="font-bold text-white text-base">Conecty</span>
-            <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5 animate-pulse"></span>
-              En Vivo
-            </span>
-          </div>
-          <div class="text-xs text-slate-400 flex items-center space-x-2">
-            <span>Sala: <strong id="headerRoomId" class="text-slate-200 font-mono">---</strong></span>
-          </div>
+        <div class="flex items-center space-x-2">
+          <span class="font-bold text-white text-sm">RustDesk</span>
+          <span class="text-slate-400 text-xs">|</span>
+          <span class="text-xs text-slate-300 font-mono" id="headerRoomId">--- --- ---</span>
+          <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5 animate-pulse"></span>
+            En Vivo
+          </span>
         </div>
       </div>
 
-      <div class="flex items-center space-x-2 md:space-x-3">
-        <!-- Indicador Prominente de Llamada de Voz -->
-        <div id="voiceCallBadge" class="flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold">
+      <!-- Herramientas Flotantes Centrales -->
+      <div class="flex items-center space-x-1.5 md:space-x-2">
+        
+        <!-- Dropdown de Acciones del Sistema (Ctrl+Alt+Del, Win, etc.) -->
+        <div class="relative inline-block">
+          <button id="btnSystemKeysDropdown" class="px-2.5 py-1.5 rounded-lg bg-[#11141a] hover:bg-[#222834] text-slate-300 hover:text-white border border-[#2c3340] text-xs font-semibold flex items-center space-x-1 transition" title="Teclas Rápidas y Comandos del Sistema">
+            <i data-lucide="command" class="w-3.5 h-3.5 text-amber-400"></i>
+            <span class="hidden sm:inline">Acciones</span>
+            <i data-lucide="chevron-down" class="w-3 h-3"></i>
+          </button>
+          <div id="systemKeysMenu" class="hidden absolute left-0 mt-2 w-56 rounded-xl rust-panel border border-[#2c3340] shadow-2xl p-1.5 z-50 text-xs space-y-1">
+            <button id="btnSendCAD" class="w-full px-2.5 py-1.5 rounded-lg hover:bg-[#0d6efd] hover:text-white text-slate-300 flex items-center justify-between transition">
+              <span>Ctrl + Alt + Supr</span>
+              <kbd class="text-[10px] font-mono text-slate-500">C+A+D</kbd>
+            </button>
+            <button id="btnSendWinKey" class="w-full px-2.5 py-1.5 rounded-lg hover:bg-[#0d6efd] hover:text-white text-slate-300 flex items-center justify-between transition">
+              <span>Tecla Windows</span>
+              <kbd class="text-[10px] font-mono text-slate-500">Win</kbd>
+            </button>
+            <button id="btnSendWinD" class="w-full px-2.5 py-1.5 rounded-lg hover:bg-[#0d6efd] hover:text-white text-slate-300 flex items-center justify-between transition">
+              <span>Mostrar Escritorio</span>
+              <kbd class="text-[10px] font-mono text-slate-500">Win+D</kbd>
+            </button>
+            <button id="btnSendAltTab" class="w-full px-2.5 py-1.5 rounded-lg hover:bg-[#0d6efd] hover:text-white text-slate-300 flex items-center justify-between transition">
+              <span>Cambiar Ventana</span>
+              <kbd class="text-[10px] font-mono text-slate-500">Alt+Tab</kbd>
+            </button>
+            <button id="btnSendTaskMgr" class="w-full px-2.5 py-1.5 rounded-lg hover:bg-[#0d6efd] hover:text-white text-slate-300 flex items-center justify-between transition">
+              <span>Administrador de Tareas</span>
+              <kbd class="text-[10px] font-mono text-slate-500">Ctrl+Shift+Esc</kbd>
+            </button>
+            <div class="border-t border-[#2c3340] my-1"></div>
+            <button id="btnSendLock" class="w-full px-2.5 py-1.5 rounded-lg hover:bg-rose-600 hover:text-white text-rose-400 flex items-center justify-between transition">
+              <span>Bloquear Equipo</span>
+              <kbd class="text-[10px] font-mono text-slate-500">Win+L</kbd>
+            </button>
+          </div>
+        </div>
+
+        <!-- Botón Transferencia de Archivos (En Sesión) -->
+        <button id="btnToolbarFileTransfer" class="px-2.5 py-1.5 rounded-lg bg-[#11141a] hover:bg-[#222834] text-slate-300 hover:text-white border border-[#2c3340] text-xs font-semibold flex items-center space-x-1.5 transition" title="Gestor de Archivos P2P">
+          <i data-lucide="folder-sync" class="w-3.5 h-3.5 text-amber-400"></i>
+          <span class="hidden md:inline">Archivos</span>
+        </button>
+
+        <!-- Indicador de Voz -->
+        <div id="voiceCallBadge" class="hidden sm:flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold">
           <div class="flex items-center space-x-0.5 h-3">
             <span class="w-1 bg-emerald-400 rounded-full eq-bar-1 h-3"></span>
             <span class="w-1 bg-emerald-400 rounded-full eq-bar-2 h-4"></span>
             <span class="w-1 bg-emerald-400 rounded-full eq-bar-3 h-2"></span>
           </div>
-          <span>Voz: <strong id="voiceStatusText">Conectada</strong></span>
-        </div>
-
-        <!-- Indicador de Mano Levantada en el Header (Google Meet style) -->
-        <div id="headerHandNotice" class="hidden px-2.5 py-1 rounded-xl text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center space-x-1.5 animate-pulse">
-          <span class="text-sm">✋</span>
-          <span id="headerHandText" class="truncate max-w-[140px]">Alguien levantó la mano</span>
+          <span id="voiceStatusText">Voz</span>
         </div>
 
         <!-- Botón Configuración (Header) -->
-        <button id="btnOpenSettings" class="px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 flex items-center space-x-1.5 transition shadow-sm" title="Configuraciones de Conecty">
-          <i data-lucide="settings" class="w-3.5 h-3.5 text-indigo-400"></i>
-          <span class="hidden md:inline">Configuración</span>
-        </button>
-
-        <!-- Botón Copiar Enlace -->
-        <button id="btnCopyInvite" class="px-3.5 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 flex items-center space-x-1.5 transition shadow-sm" title="Copiar enlace de invitación">
-          <i data-lucide="link" class="w-3.5 h-3.5"></i>
-          <span class="hidden sm:inline">Invitar con Enlace</span>
+        <button id="btnOpenSettings" class="p-1.5 rounded-lg bg-[#11141a] hover:bg-[#222834] text-slate-300 hover:text-white border border-[#2c3340] transition" title="Configuraciones">
+          <i data-lucide="settings" class="w-4 h-4 text-[#60a5fa]"></i>
         </button>
 
         <!-- Botón Grabar Sesión -->
-        <button id="btnRecordSession" class="px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 flex items-center space-x-1.5 transition shadow-sm" title="Grabar pantalla y audio de la sesión">
-          <span id="recDot" class="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
-          <span id="recText" class="hidden sm:inline">Grabar</span>
+        <button id="btnRecordSession" class="px-2.5 py-1.5 rounded-lg bg-[#11141a] hover:bg-[#222834] text-xs font-medium text-slate-300 border border-[#2c3340] flex items-center space-x-1.5 transition" title="Grabar Sesión">
+          <span id="recDot" class="w-2 h-2 rounded-full bg-rose-500"></span>
+          <span id="recText" class="hidden lg:inline">Grabar</span>
           <span id="recTimer" class="hidden text-rose-400 font-mono font-bold text-[11px] ml-1">00:00</span>
         </button>
 
-        <!-- Botón Toggle Menú de Participantes -->
-        <button id="btnToggleParticipants" class="px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 flex items-center space-x-2 transition shadow-sm hover:border-indigo-500/50" title="Ver participantes y permisos de moderador">
-          <i data-lucide="users" class="w-3.5 h-3.5 text-indigo-400"></i>
-          <span id="participantsCount">1 participante</span>
+        <!-- Botón Participantes -->
+        <button id="btnToggleParticipants" class="px-2.5 py-1.5 rounded-lg bg-[#11141a] hover:bg-[#222834] text-xs font-medium text-slate-300 border border-[#2c3340] flex items-center space-x-1.5 transition" title="Participantes">
+          <i data-lucide="users" class="w-3.5 h-3.5 text-[#60a5fa]"></i>
+          <span id="participantsCount">1</span>
+        </button>
+
+        <!-- Botón Desconectar -->
+        <button id="btnLeaveRoom" class="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition flex items-center space-x-1.5 shadow" title="Cerrar Conexión">
+          <i data-lucide="power" class="w-3.5 h-3.5"></i>
+          <span class="hidden sm:inline">Desconectar</span>
         </button>
       </div>
     </header>
 
     <!-- BARRA DE PESTAÑAS CUANDO HAY MÚLTIPLES PANTALLAS COMPARTIDAS -->
-    <div id="multiScreenTabsBar" class="h-10 px-4 md:px-6 glass-panel border-b border-slate-800/80 flex items-center space-x-2 z-20 overflow-x-auto hidden">
+    <div id="multiScreenTabsBar" class="h-9 px-4 md:px-6 bg-[#181d25] border-b border-[#2c3340] flex items-center space-x-2 z-20 overflow-x-auto hidden">
       <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider shrink-0 mr-1 flex items-center">
-        <i data-lucide="layers" class="w-3.5 h-3.5 mr-1 text-indigo-400"></i> Pantallas:
+        <i data-lucide="layers" class="w-3.5 h-3.5 mr-1 text-[#60a5fa]"></i> Monitores:
       </span>
-      <div id="multiScreenTabs" class="flex items-center space-x-2">
-        <!-- Pestañas dinámicas de pantallas -->
-      </div>
+      <div id="multiScreenTabs" class="flex items-center space-x-2"></div>
     </div>
 
-    <!-- ÁREA DE CONTENIDO (VISOR DE PANTALLA & PARTICIPANTES) -->
-    <main class="flex-1 flex overflow-hidden relative bg-slate-950">
+    <!-- ÁREA DE CONTENIDO (STAGE CENTRAL) -->
+    <main class="flex-1 flex overflow-hidden relative bg-[#11141a]">
       
       <!-- Contenedor del Visor Central -->
       <div id="stageContainer" class="flex-1 relative flex items-center justify-center p-2 md:p-4 overflow-hidden">
         
-        <!-- Pantalla de Bienvenida / Espera (cuando nadie comparte) -->
-        <div id="idleScreen" class="text-center p-8 max-w-lg glass-panel rounded-3xl border border-slate-800">
-          <div class="w-20 h-20 mx-auto rounded-3xl bg-indigo-950/60 border border-indigo-500/20 flex items-center justify-center text-indigo-400 mb-5 shadow-inner">
-            <i data-lucide="monitor" class="w-10 h-10"></i>
+        <!-- Pantalla de Espera (cuando nadie transmite) -->
+        <div id="idleScreen" class="text-center p-8 max-w-lg rust-panel rounded-2xl shadow-xl">
+          <div class="w-16 h-16 mx-auto rounded-2xl bg-blue-950/60 border border-blue-500/20 flex items-center justify-center text-[#60a5fa] mb-4 shadow-inner">
+            <i data-lucide="monitor" class="w-8 h-8"></i>
           </div>
-          <h2 class="text-xl font-bold text-white mb-2">Listo para compartir o recibir asistencia</h2>
-          <p class="text-sm text-slate-400 mb-6 leading-relaxed">
-            Presiona <strong class="text-indigo-400 font-semibold">"Compartir Pantalla"</strong> abajo para que la otra persona vea tu escritorio y pueda guiarte o tomar el control interactivo de tu equipo, o espera a que tu compañero comparta la suya.
+          <h2 class="text-lg font-bold text-white mb-2">Listo para compartir o recibir asistencia</h2>
+          <p class="text-xs text-slate-400 mb-6 leading-relaxed">
+            Presiona <strong class="text-[#60a5fa] font-semibold">"Compartir Pantalla"</strong> para transmitir tu escritorio, o espera a que tu compañero inicie su transmisión.
           </p>
           <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
-            <button id="btnStartShareIdle" class="w-full sm:w-auto px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-xl shadow-lg shadow-indigo-600/25 flex items-center justify-center space-x-2 transition">
+            <button id="btnStartShareIdle" class="w-full sm:w-auto px-5 py-2.5 bg-[#0d6efd] hover:bg-[#0b5ed7] text-white text-xs font-semibold rounded-xl shadow flex items-center justify-center space-x-2 transition">
               <i data-lucide="screen-share" class="w-4 h-4"></i>
               <span>Compartir mi Pantalla</span>
             </button>
-            <button id="btnQuickCopy" class="w-full sm:w-auto px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-semibold rounded-xl border border-slate-700 flex items-center justify-center space-x-2 transition">
+            <button id="btnQuickCopy" class="w-full sm:w-auto px-5 py-2.5 bg-[#11141a] hover:bg-[#181d25] text-slate-200 text-xs font-semibold rounded-xl border border-[#2c3340] flex items-center justify-center space-x-2 transition">
               <i data-lucide="copy" class="w-4 h-4"></i>
               <span>Copiar Enlace de Sala</span>
             </button>
           </div>
         </div>
 
-        <!-- Panel Activo del Anfitrión (Anti-Modo Espejo) -->
-        <div id="sharerActiveCard" class="text-center p-8 max-w-lg glass-panel rounded-3xl border border-indigo-500/40 shadow-2xl relative hidden">
-          <div class="w-20 h-20 mx-auto rounded-3xl bg-emerald-950/60 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mb-5 shadow-inner">
-            <i data-lucide="cast" class="w-10 h-10 animate-pulse"></i>
+        <!-- Tarjeta del Anfitrión Transmitiendo (Anti-Modo Espejo) -->
+        <div id="sharerActiveCard" class="text-center p-8 max-w-lg rust-panel rounded-2xl shadow-xl hidden">
+          <div class="w-16 h-16 mx-auto rounded-2xl bg-emerald-950/60 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mb-4 shadow-inner">
+            <i data-lucide="cast" class="w-8 h-8 animate-pulse"></i>
           </div>
-          <h2 class="text-xl font-bold text-white mb-2">Estás transmitiendo tu pantalla</h2>
-          <p class="text-sm text-slate-400 mb-6 leading-relaxed">
-            Tu pantalla se está transmitiendo en vivo a los demás participantes. Navega libremente a tus aplicaciones (código, escritorio, navegador); los demás pueden verla, guiarte y solicitar control sin crear efecto espejo.
+          <h2 class="text-lg font-bold text-white mb-2">Estás transmitiendo tu pantalla</h2>
+          <p class="text-xs text-slate-400 mb-6 leading-relaxed">
+            Tu escritorio está visible para los participantes remotos. Puedes minimizar el navegador y trabajar libremente; el operador puede interactuar mediante clics físicos.
           </p>
-
-          <!-- Toggle Rápido de Control Remoto de Ratón/Teclado en Anfitrión -->
-          <div class="mb-6 p-3.5 rounded-2xl bg-slate-900/70 border border-slate-800 text-xs flex items-center justify-between text-left">
-            <div class="flex items-center space-x-2.5">
-              <div class="w-8 h-8 rounded-xl bg-emerald-600/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30 shrink-0">
-                <i data-lucide="gamepad-2" class="w-4 h-4"></i>
-              </div>
-              <div>
-                <span class="text-slate-200 font-semibold block">Permitir Control de Ratón y Teclado</span>
-                <span class="text-[10px] text-slate-400">Los participantes autorizados pueden interactuar con tu equipo</span>
-              </div>
-            </div>
-            <label class="relative inline-flex items-center cursor-pointer ml-3 shrink-0">
-              <input type="checkbox" id="toggleHostAllowControl" class="sr-only peer" checked>
-              <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
-            </label>
-          </div>
-
           <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
-            <button id="btnStopShareCard" class="w-full sm:w-auto px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white text-sm font-semibold rounded-xl shadow-lg shadow-rose-600/30 flex items-center justify-center space-x-2 transition">
+            <button id="btnStopShareCard" class="w-full sm:w-auto px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold rounded-xl shadow flex items-center justify-center space-x-2 transition">
               <i data-lucide="screen-share-off" class="w-4 h-4"></i>
-              <span>Detener Transmisión</span>
+              <span>Detener Pantalla</span>
             </button>
-            <button id="btnShowLiveStage" class="w-full sm:w-auto px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-xl shadow-lg shadow-indigo-600/30 flex items-center justify-center space-x-2 transition">
+            <button id="btnShowLiveStage" class="w-full sm:w-auto px-5 py-2.5 bg-[#0d6efd] hover:bg-[#0b5ed7] text-white text-xs font-semibold rounded-xl shadow flex items-center justify-center space-x-2 transition">
               <i data-lucide="eye" class="w-4 h-4"></i>
               <span>Ver Pantalla en Vivo</span>
             </button>
-            <button id="btnTogglePipPreview" class="w-full sm:w-auto px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium rounded-xl border border-slate-700 flex items-center justify-center space-x-2 transition">
+            <button id="btnTogglePipPreview" class="w-full sm:w-auto px-4 py-2.5 bg-[#11141a] hover:bg-[#181d25] text-slate-300 text-xs font-medium rounded-xl border border-[#2c3340] flex items-center justify-center space-x-2 transition">
               <i data-lucide="picture-in-picture" class="w-4 h-4"></i>
-              <span id="pipBtnText">Miniatura Flotante</span>
+              <span id="pipBtnText">Miniatura</span>
             </button>
           </div>
-
-          <!-- Cuadro explicativo y botón para Clics Físicos en Windows -->
-          <div id="agentStatusCard" class="mt-4 p-3.5 rounded-2xl bg-indigo-950/40 border border-indigo-700/40 text-left space-y-2">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center space-x-2 text-indigo-300 font-bold text-xs">
-                <i data-lucide="mouse-pointer-click" class="w-4 h-4"></i>
-                <span>Control Físico de Ratón y Teclado (Windows OS)</span>
-              </div>
-              <span id="agentStatusBadge" class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">
-                Asistente No Conectado
-              </span>
-            </div>
-            <p id="agentStatusDesc" class="text-[11px] text-slate-300 leading-relaxed">
-              Por seguridad de Windows, una página web no puede hacer clic en tus otras aplicaciones (Edge, YouTube, etc.) sin un asistente con permisos. Ejecuta el asistente nativo para habilitar clics físicos en tu equipo:
-            </p>
-            <div id="agentActionsRow" class="flex flex-col sm:flex-row gap-2 pt-1">
-              <button id="btnDownloadAgentCard" class="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl shadow-md flex items-center justify-center space-x-1.5 transition">
-                <i data-lucide="download" class="w-3.5 h-3.5"></i>
-                <span>Descargar Asistente (.bat)</span>
-              </button>
-              <button id="btnCopyAgentCode" class="w-full sm:w-auto px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium rounded-xl border border-slate-700 flex items-center justify-center space-x-1.5 transition">
-                <i data-lucide="terminal" class="w-3.5 h-3.5"></i>
-                <span>Copiar Comando</span>
-              </button>
-            </div>
-            <!-- Tip para desbloquear SmartScreen -->
-            <div id="smartScreenTip" class="mt-2 text-[10px] text-slate-400 bg-slate-900/70 p-2.5 rounded-xl border border-slate-800 flex items-start space-x-2">
-              <i data-lucide="shield-alert" class="w-4 h-4 text-amber-400 shrink-0 mt-0.5"></i>
-              <div class="space-y-0.5">
-                <span class="text-slate-300 font-semibold">¿Windows muestra la ventana azul "Windows protegió su PC"?</span>
-                <p class="text-slate-400 leading-normal">
-                  Es la protección SmartScreen normal para archivos descargados nuevos. Haz clic en <strong class="text-white underline">"Más información"</strong> y luego en <strong class="text-emerald-400 font-bold">"Ejecutar de todas formas"</strong>.
-                </p>
-              </div>
-            </div>
-            <!-- Mensaje cuando el asistente está activo -->
-            <div id="agentConnectedAlert" class="hidden p-2.5 rounded-xl bg-emerald-950/60 border border-emerald-600/50 flex items-center space-x-2 text-emerald-200 text-xs">
-              <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
-              <span class="font-medium">Asistente de Windows Conectado: El operador puede hacer clic físico sobre cualquier ventana y programa de tu PC.</span>
-            </div>
-          </div>
-          <!-- Miniatura colapsable opcional -->
           <div id="pipPreviewContainer" class="mt-4 rounded-xl overflow-hidden border border-slate-700/80 hidden max-w-xs mx-auto shadow-lg">
             <video id="pipVideo" autoplay playsinline muted class="w-full h-auto bg-black"></video>
           </div>
         </div>
 
-        <!-- Video de Pantalla Compartida Activa (Visor del Espectador) -->
+        <!-- Video de Pantalla Remota Compartida -->
         <div id="videoWrapper" class="relative w-full h-full max-w-full max-h-full flex items-center justify-center overflow-hidden hidden">
-          
-          <!-- Contenedor con escala para soporte de Zoom -->
           <div id="zoomContainer" class="relative w-full h-full flex items-center justify-center transition-transform duration-150 origin-center">
-            <video id="screenVideo" autoplay playsinline muted class="max-w-full max-h-full rounded-2xl shadow-2xl object-contain bg-black border border-slate-800 transition-all"></video>
-            <!-- Lienzo del Puntero Láser, Anotaciones y Emulación de Ratón -->
+            <video id="screenVideo" autoplay playsinline muted class="max-w-full max-h-full rounded-xl shadow-2xl object-contain bg-black border border-[#2c3340] transition-all"></video>
+            <!-- Lienzo de Puntero y Clics -->
             <canvas id="laserCanvas" class="absolute inset-0 w-full h-full pointer-events-auto cursor-crosshair z-10"></canvas>
           </div>
 
-          <!-- Banner Informativo Sobre el Video -->
-          <div id="sharerBanner" class="absolute top-4 left-4 z-20 px-3.5 py-1.5 rounded-xl glass-panel text-xs text-white flex items-center space-x-2 border border-slate-700/80 shadow-lg">
-            <i data-lucide="monitor" class="w-3.5 h-3.5 text-indigo-400"></i>
-            <span id="sharerNameText">Pantalla de: Usuario</span>
+          <!-- Banner Informativo -->
+          <div id="sharerBanner" class="absolute top-4 left-4 z-20 px-3.5 py-1.5 rounded-xl rust-panel text-xs text-white flex items-center space-x-2 shadow-lg">
+            <i data-lucide="monitor" class="w-3.5 h-3.5 text-[#60a5fa]"></i>
+            <span id="sharerNameText">Pantalla de: Compañero</span>
           </div>
 
-          <!-- Botón de Protección Anti-Espejo (Visible para quien comparte) -->
-          <button id="btnToggleMirrorShield" class="absolute top-4 left-64 z-20 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-xs text-amber-300 hover:text-amber-200 border border-amber-500/30 flex items-center space-x-1.5 shadow-lg transition hidden" title="Ocultar video para evitar efecto espejo si compartes toda la pantalla">
-            <i data-lucide="shield" class="w-3.5 h-3.5"></i>
-            <span>Ocultar (Anti-Espejo)</span>
-          </button>
-
-          <!-- Banner de Estado de Modo Control Remoto -->
-          <div id="remoteControlBanner" class="absolute top-16 left-4 z-20 px-3.5 py-1.5 rounded-xl glass-panel text-xs text-emerald-300 flex items-center space-x-2 border border-emerald-500/40 shadow-lg hidden">
+          <!-- Banner Modo Control Activo -->
+          <div id="remoteControlBanner" class="absolute top-14 left-4 z-20 px-3.5 py-1.5 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-xs text-emerald-300 flex items-center space-x-2 shadow-lg hidden">
             <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
             <span id="remoteControlBannerText">Modo Control Remoto Activo</span>
           </div>
 
-          <!-- Panel de Estadísticas WebRTC (toggle con botón Stats) -->
-          <div id="statsOverlay" class="absolute bottom-16 left-4 z-20 px-3.5 py-2.5 rounded-xl glass-panel text-[11px] font-mono text-slate-300 border border-slate-700/60 shadow-lg hidden min-w-[220px] space-y-1 leading-relaxed">
+          <!-- Barra de Controles de Pantalla Superior Derecha -->
+          <div id="screenControlsBar" class="absolute top-4 right-4 z-20 flex items-center space-x-1.5 p-1 rounded-xl rust-panel shadow-2xl">
+            <!-- Botón Ajustar (Fit) -->
+            <button id="btnFitScreen" class="px-2.5 py-1.5 rounded-lg bg-[#0d6efd] text-white text-xs font-semibold hover:bg-[#0b5ed7] transition flex items-center space-x-1" title="Ajustar">
+              <i data-lucide="minimize-2" class="w-3.5 h-3.5"></i>
+              <span class="hidden sm:inline">Ajustar</span>
+            </button>
+            <button id="btnFillScreen" class="px-2.5 py-1.5 rounded-lg bg-[#11141a] hover:bg-[#222834] text-slate-300 text-xs font-medium transition flex items-center space-x-1" title="Llenar">
+              <i data-lucide="maximize-2" class="w-3.5 h-3.5"></i>
+              <span class="hidden sm:inline">Llenar</span>
+            </button>
+            <button id="btnOriginalScreen" class="px-2 py-1.5 rounded-lg bg-[#11141a] hover:bg-[#222834] text-slate-300 text-xs font-medium transition" title="1:1 Original">
+              <span class="font-mono text-[11px] font-bold">1:1</span>
+            </button>
+
+            <div class="h-4 w-px bg-slate-700 mx-0.5"></div>
+            <button id="btnZoomOut" class="p-1.5 rounded-lg bg-[#11141a] hover:bg-[#222834] text-slate-300 text-xs transition" title="Reducir">
+              <i data-lucide="zoom-out" class="w-3.5 h-3.5"></i>
+            </button>
+            <span id="zoomLevelText" class="text-[11px] font-mono text-slate-300 px-1 font-semibold select-none">100%</span>
+            <button id="btnZoomIn" class="p-1.5 rounded-lg bg-[#11141a] hover:bg-[#222834] text-slate-300 text-xs transition" title="Aumentar">
+              <i data-lucide="zoom-in" class="w-3.5 h-3.5"></i>
+            </button>
+
+            <div class="h-4 w-px bg-slate-700 mx-0.5"></div>
+            <button id="btnFullscreen" class="p-1.5 rounded-lg bg-[#0d6efd]/20 hover:bg-[#0d6efd] text-[#60a5fa] hover:text-white text-xs transition" title="Pantalla Completa">
+              <i data-lucide="expand" class="w-3.5 h-3.5"></i>
+            </button>
+            <button id="btnToggleStats" class="p-1.5 rounded-lg bg-[#11141a] hover:bg-[#222834] text-slate-400 hover:text-emerald-400 text-xs transition" title="Estadísticas WebRTC">
+              <i data-lucide="bar-chart-2" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+
+          <!-- Overlay Stats WebRTC -->
+          <div id="statsOverlay" class="absolute bottom-16 left-4 z-20 px-3.5 py-2.5 rounded-xl rust-panel text-[11px] font-mono text-slate-300 shadow-lg hidden min-w-[220px] space-y-1">
             <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1 flex items-center space-x-1.5">
               <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
               <span>Stats WebRTC</span>
             </div>
             <div id="statsVideo" class="text-slate-200">–</div>
             <div id="statsNetwork" class="text-slate-400">–</div>
-            <div id="statsQuality" class="text-indigo-300">–</div>
+            <div id="statsQuality" class="text-[#60a5fa]">–</div>
           </div>
-
-          <!-- Barra de Controles de Tamaño de Pantalla & Zoom -->
-          <div id="screenControlsBar" class="absolute top-4 right-4 z-20 flex items-center space-x-1.5 p-1.5 rounded-2xl glass-panel border border-slate-700/80 shadow-2xl">
-            <!-- Botón Ajustar (Fit) -->
-            <button id="btnFitScreen" class="px-2.5 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-500 transition flex items-center space-x-1" title="Ajustar pantalla completa">
-              <i data-lucide="minimize-2" class="w-3.5 h-3.5"></i>
-              <span class="hidden sm:inline">Ajustar</span>
-            </button>
-
-            <!-- Botón Llenar (Fill / Estirar) -->
-            <button id="btnFillScreen" class="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition flex items-center space-x-1" title="Llenar todo el espacio">
-              <i data-lucide="maximize-2" class="w-3.5 h-3.5"></i>
-              <span class="hidden sm:inline">Llenar</span>
-            </button>
-
-            <!-- Botón 1:1 Original -->
-            <button id="btnOriginalScreen" class="px-2 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition" title="Resolución Original (100%)">
-              <span class="font-mono text-[11px] font-bold">1:1</span>
-            </button>
-
-            <div class="h-4 w-px bg-slate-700 mx-0.5"></div>
-
-            <!-- Controles de Zoom -->
-            <button id="btnZoomOut" class="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition" title="Reducir Zoom">
-              <i data-lucide="zoom-out" class="w-3.5 h-3.5"></i>
-            </button>
-            <span id="zoomLevelText" class="text-[11px] font-mono text-slate-300 px-1 font-semibold select-none">100%</span>
-            <button id="btnZoomIn" class="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition" title="Aumentar Zoom">
-              <i data-lucide="zoom-in" class="w-3.5 h-3.5"></i>
-            </button>
-
-            <div class="h-4 w-px bg-slate-700 mx-0.5"></div>
-
-            <!-- Botón Pantalla Completa (Fullscreen) -->
-            <button id="btnFullscreen" class="p-1.5 rounded-xl bg-indigo-600/30 hover:bg-indigo-600 text-indigo-300 hover:text-white text-xs transition border border-indigo-500/40" title="Pantalla Completa (F)">
-              <i data-lucide="expand" class="w-3.5 h-3.5"></i>
-            </button>
-
-            <div class="h-4 w-px bg-slate-700 mx-0.5"></div>
-
-            <!-- Botón Toggle Stats WebRTC -->
-            <button id="btnToggleStats" class="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-emerald-400 text-xs transition border border-slate-700" title="Ver estadísticas de transmisión WebRTC">
-              <i data-lucide="bar-chart-2" class="w-3.5 h-3.5"></i>
-            </button>
-
-            <div class="h-4 w-px bg-slate-700 mx-0.5"></div>
-
-            <!-- Botón Ceder / Control Remoto Visible Directamente en la Pantalla con Menú Desplegable -->
-            <div class="relative inline-block">
-              <button id="btnVideoControlAction" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-600/30 flex items-center space-x-1.5 transition" title="Ceder o tomar control interactivo de ratón y teclado">
-                <i data-lucide="gamepad-2" id="btnVideoControlIcon" class="w-3.5 h-3.5"></i>
-                <span id="btnVideoControlText">Ceder Control</span>
-              </button>
-              <div id="videoControlDropdown" class="hidden absolute right-0 mt-2 w-52 rounded-2xl glass-panel border border-slate-700/80 shadow-2xl p-2 z-50 flex flex-col space-y-1.5 backdrop-blur-xl">
-                <!-- Se inyecta dinámicamente si hay múltiples participantes -->
-              </div>
-            </div>
-          </div>
-
-          <!-- Indicador de Modo Puntero Activo -->
-          <div id="pointerModeIndicator" class="absolute bottom-4 right-4 z-20 px-3 py-1.5 rounded-xl bg-indigo-600/80 backdrop-blur-md text-xs text-white font-medium flex items-center space-x-2 shadow-lg">
-            <span class="w-2 h-2 rounded-full bg-red-400 laser-ping"></span>
-            <span>Puntero Láser Activo</span>
-          </div>
-        </div>
-
-        <!-- Miniaturas / Grid de Audio y Avatares de Participantes (Oculto por defecto para no tapar la pantalla) -->
-        <div id="participantsBar" class="hidden">
-          <!-- Tarjetas dinámicas -->
         </div>
 
       </div>
 
-      <!-- PANEL LATERAL DE PARTICIPANTES & TILES (ESTILO GOOGLE MEET) -->
-      <aside id="participantsSidebar" class="w-64 md:w-72 lg:w-80 glass-panel border-l border-slate-800 flex flex-col z-20 shrink-0 transition-all duration-300 overflow-hidden">
-        <div class="h-14 px-4 border-b border-slate-800 flex items-center justify-between shrink-0">
+      <!-- PANEL LATERAL DE PARTICIPANTES -->
+      <aside id="participantsSidebar" class="w-64 md:w-72 rust-panel border-l border-[#2c3340] flex flex-col z-20 shrink-0 transition-all duration-300 overflow-hidden">
+        <div class="h-14 px-4 border-b border-[#2c3340] flex items-center justify-between shrink-0">
           <div class="flex items-center space-x-2">
-            <i data-lucide="users" class="w-4 h-4 text-indigo-400"></i>
-            <h3 class="font-bold text-xs md:text-sm text-white">Participantes</h3>
+            <i data-lucide="users" class="w-4 h-4 text-[#60a5fa]"></i>
+            <h3 class="font-bold text-xs text-white">Participantes</h3>
           </div>
-          <button id="btnCloseParticipants" class="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition" title="Ocultar barra lateral">
+          <button id="btnCloseParticipants" class="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition">
             <i data-lucide="x" class="w-4 h-4"></i>
           </button>
         </div>
-
-        <!-- Panel de Estado de Moderador para Control Remoto (Solo visible para Anfitrión) -->
-        <div id="moderatorControlBox" class="p-3 mx-3 mt-3 rounded-2xl bg-slate-900/90 border border-slate-800 text-xs text-left shrink-0">
-          <div class="flex items-center justify-between mb-1">
-            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center">
-              <i data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-400 mr-1"></i> Moderador
-            </span>
-            <span id="activeControllerBadge" class="px-2 py-0.5 rounded-full text-[10px] bg-slate-800 text-slate-400 border border-slate-700">
-              Nadie tiene control
-            </span>
-          </div>
-          <p class="text-[10px] text-slate-400 leading-tight mb-2">
-            Presiona <strong class="text-emerald-400 font-semibold">"Ceder Control"</strong> en la tarjeta de un usuario o arriba en la barra de la pantalla.
-          </p>
-          <div id="revokeControlContainer" class="hidden">
-            <button id="btnRevokeControlAll" class="w-full py-1.5 px-2.5 rounded-xl bg-rose-600/30 hover:bg-rose-600 text-rose-300 hover:text-white text-[11px] font-semibold border border-rose-500/40 flex items-center justify-center space-x-1.5 transition">
-              <i data-lucide="x-circle" class="w-3.5 h-3.5"></i>
-              <span>Quitar Control a Todos (Esc)</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Info para Participante Normal (no anfitrión) -->
-        <div id="participantGuestBox" class="p-3 mx-3 mt-3 rounded-2xl bg-slate-900/90 border border-slate-800 text-xs text-left shrink-0 hidden">
-          <div class="flex items-center justify-between mb-1">
-            <span class="text-[10px] font-bold uppercase tracking-wider text-indigo-400 flex items-center">
-              <i data-lucide="shield" class="w-3.5 h-3.5 text-indigo-400 mr-1"></i> Estado
-            </span>
-            <span id="guestControlBadge" class="px-2 py-0.5 rounded-full text-[10px] bg-slate-800 text-slate-400 border border-slate-700">
-              Espectador
-            </span>
-          </div>
-          <p id="guestControlText" class="text-[10px] text-slate-400 leading-tight">
-            El anfitrión administra los permisos de voz y control remoto.
-          </p>
-        </div>
-
-        <!-- Lista Vertical de Mosaicos de Participantes (Estilo Google Meet) -->
-        <div id="participantsListDrawer" class="flex-1 p-3 overflow-y-auto space-y-3 custom-scrollbar min-h-0">
-          <!-- Inyectado dinámicamente con aspect-[16/10] -->
+        <div id="participantsListDrawer" class="flex-1 p-3 space-y-2 overflow-y-auto custom-scrollbar"></div>
+        <div id="revokeControlContainer" class="p-3 border-t border-[#2c3340] hidden">
+          <button id="btnRevokeControlAll" class="w-full py-2 px-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold flex items-center justify-center space-x-1.5 transition">
+            <i data-lucide="shield-x" class="w-3.5 h-3.5"></i>
+            <span>Revocar Control Remoto</span>
+          </button>
         </div>
       </aside>
 
-      <!-- PANEL LATERAL DE CHAT (COLAPSIBLE) -->
-      <aside id="chatSidebar" class="w-80 md:w-96 glass-panel border-l border-slate-800 flex flex-col z-20 transition-all duration-300 transform translate-x-full absolute right-0 inset-y-0 shadow-2xl">
-        <div class="h-16 px-5 border-b border-slate-800 flex items-center justify-between">
+      <!-- PANEL LATERAL DE CHAT -->
+      <aside id="chatSidebar" class="w-72 md:w-80 rust-panel border-l border-[#2c3340] flex flex-col z-20 shrink-0 transition-all duration-300 hidden">
+        <div class="h-14 px-4 border-b border-[#2c3340] flex items-center justify-between shrink-0">
           <div class="flex items-center space-x-2">
-            <i data-lucide="message-square" class="w-4 h-4 text-indigo-400"></i>
-            <h3 class="font-bold text-sm text-white">Chat de la Sala</h3>
+            <i data-lucide="message-square" class="w-4 h-4 text-[#60a5fa]"></i>
+            <h3 class="font-bold text-xs text-white">Chat de Sesión</h3>
           </div>
-          <button id="btnCloseChat" class="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition">
+          <button id="btnCloseChat" class="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition">
             <i data-lucide="x" class="w-4 h-4"></i>
           </button>
         </div>
-
-        <!-- Lista de Mensajes -->
-        <div id="chatMessages" class="flex-1 p-4 overflow-y-auto space-y-3 custom-scrollbar text-sm">
-          <!-- Mensaje de bienvenida -->
-          <div class="p-3 rounded-xl bg-indigo-950/40 border border-indigo-800/30 text-xs text-indigo-200">
-            👋 ¡Bienvenidos a Conecty! Puedes enviar mensajes, enlaces o notas técnicas aquí mientras compartes pantalla.
-          </div>
-        </div>
-
-        <!-- Input de Envío -->
-        <form id="chatForm" class="p-3 border-t border-slate-800 flex items-center space-x-2">
-          <input type="text" id="chatInput" placeholder="Escribe un mensaje..." class="flex-1 px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-          <button type="submit" class="p-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition shadow">
-            <i data-lucide="send" class="w-4 h-4"></i>
+        <div id="chatMessages" class="flex-1 p-3 space-y-2.5 overflow-y-auto custom-scrollbar"></div>
+        <form id="chatForm" class="p-3 border-t border-[#2c3340] flex items-center space-x-2">
+          <input type="text" id="chatInput" placeholder="Escribe un mensaje..." class="flex-1 px-3 py-2 rust-input rounded-xl text-xs text-white placeholder-slate-500">
+          <button type="submit" class="p-2 bg-[#0d6efd] hover:bg-[#0b5ed7] text-white rounded-xl transition">
+            <i data-lucide="send" class="w-3.5 h-3.5"></i>
           </button>
         </form>
       </aside>
 
     </main>
 
-    <!-- BARRA INFERIOR DE CONTROLES (DOCK) -->
-    <footer class="h-20 glass-panel border-t border-slate-800/80 px-4 md:px-8 flex items-center justify-between z-30">
-      
-      <!-- Controles de Audio y Micrófono -->
+    <!-- BARRA INFERIOR DE ACCIONES (DOCK) -->
+    <footer class="h-16 px-4 md:px-6 bg-[#181d25] border-t border-[#2c3340] flex items-center justify-center md:justify-between z-20 shrink-0">
+      <div class="hidden md:flex items-center space-x-2">
+        <button id="btnCopyInvite" class="px-3 py-1.5 rounded-lg bg-[#11141a] hover:bg-[#222834] text-xs text-slate-300 border border-[#2c3340] flex items-center space-x-1.5 transition">
+          <i data-lucide="link" class="w-3.5 h-3.5"></i>
+          <span>Copiar Enlace</span>
+        </button>
+      </div>
+
+      <!-- Dock Central de Botones de Sesión -->
       <div class="flex items-center space-x-2">
-        <button id="btnToggleMic" class="h-12 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs flex items-center space-x-2 border border-slate-700 transition" title="Activar/Silenciar Micrófono (Atajo: M)">
+        <!-- Micrófono -->
+        <button id="btnToggleMic" class="px-3 py-2 rounded-xl bg-[#11141a] hover:bg-[#222834] text-slate-300 border border-[#2c3340] flex items-center space-x-1.5 text-xs font-semibold transition">
           <i data-lucide="mic" id="micIcon" class="w-4 h-4 text-emerald-400"></i>
           <span id="micText" class="hidden sm:inline">Micrófono</span>
         </button>
-        <!-- Probar Audio / Altavoces -->
-        <button id="btnTestAudio" class="h-12 px-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-indigo-400 font-medium text-xs flex items-center space-x-1.5 border border-slate-700 transition" title="Probar sonido de altavoces">
-          <i data-lucide="volume-2" class="w-4 h-4"></i>
-          <span class="hidden md:inline">Probar Audio</span>
-        </button>
-      </div>
 
-      <!-- Controles Centrales (Pantalla, Control Remoto, Láser, Interacción) -->
-      <div class="flex items-center space-x-2 md:space-x-3">
-        
-        <!-- Botón Compartir Pantalla -->
-        <button id="btnToggleScreen" class="h-12 px-5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center space-x-2 shadow-lg shadow-indigo-600/30 transition">
-          <i data-lucide="screen-share" id="screenIcon" class="w-4 h-4"></i>
+        <!-- Compartir Pantalla -->
+        <button id="btnToggleScreen" class="px-3.5 py-2 rounded-xl bg-[#0d6efd] hover:bg-[#0b5ed7] text-white flex items-center space-x-1.5 text-xs font-bold transition shadow">
+          <i data-lucide="screen-share" class="w-4 h-4"></i>
           <span id="screenText">Compartir Pantalla</span>
         </button>
 
-        <!-- Botón Modo Control Remoto (Ratón y Teclado) -->
-        <button id="btnToggleControl" class="h-12 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs flex items-center space-x-2 border border-slate-700 transition" title="Tomar / Ceder control de ratón y teclado">
-          <i data-lucide="gamepad-2" id="controlIcon" class="w-4 h-4 text-slate-400"></i>
-          <span id="controlText" class="hidden md:inline">Control Remoto</span>
+        <!-- Control Remoto (Ratón/Teclado) -->
+        <button id="btnToggleControl" class="px-3.5 py-2 rounded-xl bg-[#11141a] hover:bg-[#222834] text-slate-200 border border-[#2c3340] flex items-center space-x-1.5 text-xs font-semibold transition" title="Activar/Desactivar Puntero y Control Remoto">
+          <i data-lucide="mouse-pointer-click" id="controlIcon" class="w-4 h-4 text-slate-400"></i>
+          <span id="controlText" class="hidden sm:inline">Control Remoto</span>
         </button>
 
-        <!-- Botón Modo Puntero Láser / Guía Visual -->
-        <button id="btnToggleLaser" class="h-12 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs flex items-center space-x-2 border border-slate-700 transition" title="Puntero láser interactivo">
-          <i data-lucide="mouse-pointer" id="laserIcon" class="w-4 h-4 text-rose-400"></i>
-          <span class="hidden md:inline">Puntero Guía</span>
+        <!-- Puntero Láser -->
+        <button id="btnToggleLaser" class="p-2 rounded-xl bg-[#11141a] hover:bg-[#222834] text-slate-300 border border-[#2c3340] transition" title="Puntero Láser / Anotaciones">
+          <i data-lucide="pen-tool" class="w-4 h-4 text-rose-400"></i>
         </button>
 
-        <!-- Botón Limpiar Anotaciones -->
-        <button id="btnClearCanvas" class="h-12 w-12 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center border border-slate-700 transition" title="Limpiar marcas y trazos">
-          <i data-lucide="eraser" class="w-4 h-4"></i>
-        </button>
-
-        <!-- Botón Alzar / Bajar la Mano -->
-        <button id="btnToggleRaiseHand" class="h-12 px-3.5 md:px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs flex items-center space-x-2 border border-slate-700 transition" title="Alzar la mano para pedir la palabra">
-          <span id="handIcon" class="text-base select-none">✋</span>
-          <span id="handText" class="hidden sm:inline">Alzar Mano</span>
-        </button>
-      </div>
-
-      <!-- Controles Secundarios (Participantes, Chat, Salir) -->
-      <div class="flex items-center space-x-2">
-        <!-- Toggle Participantes desde el Dock -->
-        <button id="btnToggleParticipantsDock" class="h-12 px-3.5 md:px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs flex items-center space-x-2 border border-slate-700 transition" title="Ver Participantes y Moderación">
-          <i data-lucide="users" class="w-4 h-4 text-indigo-400"></i>
-          <span class="hidden sm:inline">Participantes</span>
-        </button>
-
-        <!-- Toggle Chat -->
-        <button id="btnToggleChat" class="h-12 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs flex items-center space-x-2 border border-slate-700 transition relative">
+        <!-- Chat -->
+        <button id="btnToggleChat" class="relative p-2 rounded-xl bg-[#11141a] hover:bg-[#222834] text-slate-300 border border-[#2c3340] transition" title="Chat">
           <i data-lucide="message-square" class="w-4 h-4"></i>
-          <span class="hidden sm:inline">Chat</span>
-          <span id="chatBadge" class="hidden absolute -top-1 -right-1 w-4 h-4 bg-indigo-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center">0</span>
-        </button>
-
-        <!-- Salir de la Sala -->
-        <button id="btnLeaveRoom" class="h-12 px-4 rounded-2xl bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white font-medium text-xs flex items-center space-x-2 border border-rose-500/30 transition">
-          <i data-lucide="phone-off" class="w-4 h-4"></i>
-          <span class="hidden sm:inline">Salir</span>
+          <span id="chatBadge" class="hidden absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center">0</span>
         </button>
       </div>
 
+      <!-- Acciones de Ceder Control al Lado Derecho -->
+      <div class="hidden md:flex items-center space-x-2">
+        <div class="relative inline-block">
+          <button id="btnVideoControlAction" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center space-x-1.5 transition">
+            <i data-lucide="gamepad-2" id="btnVideoControlIcon" class="w-3.5 h-3.5"></i>
+            <span id="btnVideoControlText">Ceder Control</span>
+          </button>
+          <div id="videoControlDropdown" class="hidden absolute right-0 bottom-full mb-2 w-52 rounded-xl rust-panel border border-[#2c3340] shadow-2xl p-1.5 z-50 flex flex-col space-y-1"></div>
+        </div>
+      </div>
     </footer>
 
   </div>
 
-  <!-- ================= MODAL: SOLICITUD DE CONEXIÓN ENTRANTE (HOST / ANFITRIÓN) ================= -->
-  <div id="incomingRequestModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md hidden transition-all duration-300">
-    <div class="w-full max-w-md glass-panel p-6 md:p-7 rounded-3xl border border-indigo-500/40 shadow-2xl relative overflow-hidden transform transition-all">
+  <!-- ================= MODAL DE CONFIGURACIONES (RUSTDESK PREFERENCES) ================= -->
+  <div id="settingsModal" class="fixed inset-0 z-50 flex items-center justify-center p-3 md:p-6 bg-black/80 backdrop-blur-md hidden transition-all duration-300">
+    <div class="w-full max-w-3xl rust-panel rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
       
-      <!-- Efecto de Luz Pulsante -->
-      <div class="absolute -top-16 -right-16 w-36 h-36 bg-indigo-600/30 rounded-full blur-2xl pointer-events-none"></div>
-      <div class="absolute -bottom-16 -left-16 w-36 h-36 bg-emerald-600/20 rounded-full blur-2xl pointer-events-none"></div>
-
-      <div class="flex items-center space-x-3 mb-5">
-        <div class="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/30 text-amber-400 flex items-center justify-center relative shadow-inner">
-          <i data-lucide="bell-ring" class="w-6 h-6 animate-bounce"></i>
-          <span class="absolute -top-1 -right-1 w-3 h-3 bg-amber-400 rounded-full animate-ping"></span>
-        </div>
-        <div>
-          <h3 class="text-base font-bold text-white">Solicitud de Conexión</h3>
-          <p class="text-xs text-amber-400 font-semibold flex items-center">
-            <span class="w-1.5 h-1.5 rounded-full bg-amber-400 mr-1.5 animate-pulse"></span>
-            Esperando tu autorización
-          </p>
-        </div>
-      </div>
-
-      <!-- Tarjeta del Solicitante -->
-      <div class="p-4 rounded-2xl bg-slate-900/90 border border-slate-700/80 mb-5 shadow-inner">
-        <div class="flex items-center space-x-3.5">
-          <div id="incomingRequesterAvatar" class="w-11 h-11 rounded-xl bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 font-extrabold text-base flex items-center justify-center">
-            US
-          </div>
-          <div>
-            <div id="incomingRequesterName" class="font-bold text-sm text-white">Usuario Remoto</div>
-            <div class="text-xs text-slate-400 font-mono flex items-center space-x-1.5 mt-0.5">
-              <span>Número Conecty:</span>
-              <span id="incomingRequesterDeviceId" class="text-indigo-300 font-bold">--- --- ---</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Permisos que se otorgarán -->
-      <div class="mb-6 space-y-2 text-xs text-slate-300 bg-slate-900/40 p-3.5 rounded-2xl border border-slate-800">
-        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Permisos solicitados:</div>
-        <div class="flex items-center space-x-2 text-slate-300">
-          <i data-lucide="gamepad-2" class="w-3.5 h-3.5 text-emerald-400"></i>
-          <span>Control remoto de ratón y teclado</span>
-        </div>
-        <div class="flex items-center space-x-2 text-slate-300">
-          <i data-lucide="mic" class="w-3.5 h-3.5 text-emerald-400"></i>
-          <span>Llamada de voz bidireccional en tiempo real</span>
-        </div>
-        <div class="flex items-center space-x-2 text-slate-300">
-          <i data-lucide="monitor" class="w-3.5 h-3.5 text-indigo-400"></i>
-          <span>Transmisión y visualización de pantalla compartida</span>
-        </div>
-      </div>
-
-      <!-- Botones de Acción -->
-      <div class="grid grid-cols-2 gap-3">
-        <button id="btnRejectConnection" class="py-3 px-4 bg-slate-800 hover:bg-rose-600/20 text-slate-300 hover:text-rose-300 font-semibold rounded-xl border border-slate-700 hover:border-rose-500/40 transition flex items-center justify-center space-x-2 text-xs shadow">
-          <i data-lucide="x" class="w-4 h-4"></i>
-          <span>Rechazar</span>
-        </button>
-        <button id="btnAcceptConnection" class="py-3 px-4 bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white font-semibold rounded-xl shadow-lg shadow-emerald-600/30 transition flex items-center justify-center space-x-2 text-xs">
-          <i data-lucide="shield-check" class="w-4 h-4"></i>
-          <span>Autorizar y Conectar</span>
-        </button>
-      </div>
-
-    </div>
-  </div>
-
-  <!-- ================= MODAL: ESPERANDO AUTORIZACIÓN (GUEST / INVITADO) ================= -->
-  <div id="waitingApprovalModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md hidden transition-all duration-300">
-    <div class="w-full max-w-sm glass-panel p-6 rounded-3xl border border-slate-700/80 shadow-2xl text-center relative overflow-hidden">
-      
-      <div class="w-16 h-16 mx-auto rounded-3xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 mb-4 relative shadow-inner">
-        <i data-lucide="shield-alert" class="w-8 h-8 animate-pulse"></i>
-        <span class="absolute inset-0 rounded-3xl border-2 border-indigo-400 animate-ping opacity-25"></span>
-      </div>
-
-      <h3 class="text-base font-bold text-white mb-1">Solicitando Conexión</h3>
-      <p class="text-xs text-slate-400 mb-4">
-        Destino: <strong id="waitingTargetIdDisplay" class="text-indigo-300 font-mono font-bold">--- --- ---</strong>
-      </p>
-
-      <div class="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 mb-5 text-[11px] text-slate-300 leading-relaxed text-left">
-        <div class="flex items-center space-x-2 mb-1 text-emerald-400 font-semibold">
-          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
-          <span>Esperando autorización</span>
-        </div>
-        <p class="text-slate-400">
-          El anfitrión <strong id="waitingHostNameText" class="text-slate-200">Usuario</strong> debe aceptar tu solicitud en su pantalla antes de que comience la conexión.
-        </p>
-      </div>
-
-      <button id="btnCancelWaitingApproval" class="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl border border-slate-700 transition flex items-center justify-center space-x-1.5 shadow">
-        <i data-lucide="x" class="w-3.5 h-3.5"></i>
-        <span>Cancelar Solicitud</span>
-      </button>
-
-    </div>
-  </div>
-
-  <!-- ================= MODAL DE CONFIGURACIONES (ESTILO ANYDESK) ================= -->
-  <div id="settingsModal" class="fixed inset-0 z-50 flex items-center justify-center p-3 md:p-6 bg-slate-950/85 backdrop-blur-md hidden transition-all duration-300">
-    <div class="w-full max-w-3xl glass-panel rounded-3xl border border-slate-700/80 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-      
-      <!-- Header del Modal -->
-      <div class="h-16 px-6 border-b border-slate-800 flex items-center justify-between bg-slate-900/60 shrink-0">
+      <div class="h-14 px-6 border-b border-[#2c3340] bg-[#181d25] flex items-center justify-between shrink-0">
         <div class="flex items-center space-x-2.5">
-          <div class="w-8 h-8 rounded-xl bg-indigo-600/20 text-indigo-400 flex items-center justify-center border border-indigo-500/30">
+          <div class="w-8 h-8 rounded-lg bg-[#0d6efd]/20 text-[#60a5fa] flex items-center justify-center border border-[#0d6efd]/30 font-bold">
             <i data-lucide="sliders" class="w-4 h-4"></i>
           </div>
-          <h2 class="text-base font-bold text-white">Configuración de Conecty</h2>
+          <h2 class="text-sm font-bold text-white">Configuración de RustDesk Web</h2>
         </div>
-        <button id="btnCloseSettings" class="p-2 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white transition">
-          <i data-lucide="x" class="w-5 h-5"></i>
+        <button id="btnCloseSettings" class="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition">
+          <i data-lucide="x" class="w-4 h-4"></i>
         </button>
       </div>
 
-      <!-- Cuerpo con Navegación por Pestañas -->
       <div class="flex-1 flex flex-col md:flex-row overflow-hidden">
         
         <!-- Pestañas Laterales -->
-        <nav class="w-full md:w-56 p-3 border-b md:border-b-0 md:border-r border-slate-800 bg-slate-950/60 flex md:flex-col space-x-1 md:space-x-0 md:space-y-1.5 shrink-0 overflow-x-auto">
-          <button data-tab="general" class="settings-tab-btn w-full px-3 py-2.5 rounded-xl text-xs font-semibold flex items-center space-x-2.5 transition text-white bg-indigo-600 shadow">
+        <nav class="w-full md:w-56 p-3 border-b md:border-b-0 md:border-r border-[#2c3340] bg-[#11141a]/60 flex md:flex-col space-x-1 md:space-x-0 md:space-y-1.5 shrink-0 overflow-x-auto">
+          <button data-tab="general" class="settings-tab-btn w-full px-3 py-2.5 rounded-xl text-xs font-semibold flex items-center space-x-2.5 transition text-white bg-[#0d6efd] shadow">
             <i data-lucide="user" class="w-4 h-4"></i>
             <span>General</span>
           </button>
           <button data-tab="security" class="settings-tab-btn w-full px-3 py-2.5 rounded-xl text-xs font-semibold flex items-center space-x-2.5 transition text-slate-400 hover:text-white hover:bg-slate-800/60">
             <i data-lucide="shield-check" class="w-4 h-4"></i>
-            <span>Seguridad</span>
+            <span>Seguridad & Acceso</span>
           </button>
           <button data-tab="screen" class="settings-tab-btn w-full px-3 py-2.5 rounded-xl text-xs font-semibold flex items-center space-x-2.5 transition text-slate-400 hover:text-white hover:bg-slate-800/60">
             <i data-lucide="monitor" class="w-4 h-4"></i>
-            <span>Pantalla</span>
+            <span>Pantalla y 4K</span>
           </button>
           <button data-tab="audio" class="settings-tab-btn w-full px-3 py-2.5 rounded-xl text-xs font-semibold flex items-center space-x-2.5 transition text-slate-400 hover:text-white hover:bg-slate-800/60">
             <i data-lucide="mic" class="w-4 h-4"></i>
@@ -838,7 +890,7 @@
           </button>
           <button data-tab="network" class="settings-tab-btn w-full px-3 py-2.5 rounded-xl text-xs font-semibold flex items-center space-x-2.5 transition text-slate-400 hover:text-white hover:bg-slate-800/60">
             <i data-lucide="network" class="w-4 h-4"></i>
-            <span>Red y Control OS</span>
+            <span>Red y Servidor</span>
           </button>
         </nav>
 
@@ -848,54 +900,66 @@
           <!-- PESTAÑA 1: GENERAL -->
           <div id="tabGeneral" class="settings-tab-pane space-y-5">
             <div>
-              <h3 class="text-sm font-bold text-white mb-1">Identidad del Dispositivo</h3>
-              <p class="text-slate-400 text-[11px]">Personaliza cómo te ven los demás usuarios al conectar.</p>
+              <h3 class="text-sm font-bold text-white mb-1">Identidad de Este Escritorio</h3>
+              <p class="text-slate-400 text-[11px]">Personaliza el nombre con el que te verán los demás equipos.</p>
             </div>
 
             <div class="space-y-4">
               <div>
-                <label class="block text-slate-300 font-semibold mb-1.5">Tu Nombre o Alias</label>
-                <input type="text" id="settingUserName" class="w-full max-w-sm px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                <label class="block text-slate-300 font-semibold mb-1.5">Nombre o Alias del Dispositivo</label>
+                <input type="text" id="settingUserName" class="w-full max-w-sm px-3.5 py-2.5 rust-input rounded-xl text-white">
               </div>
 
               <div>
-                <label class="block text-slate-300 font-semibold mb-1.5">Tu ID Permanente de Conecty</label>
+                <label class="block text-slate-300 font-semibold mb-1.5">Su ID Permanente</label>
                 <div class="flex items-center space-x-2 max-w-sm">
-                  <input type="text" id="settingDeviceId" readonly class="w-full px-3.5 py-2.5 bg-slate-900/60 border border-slate-800 rounded-xl font-mono text-indigo-300 font-bold select-all">
-                  <button id="btnSettingRegenId" class="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition shrink-0" title="Generar nuevo número">
+                  <input type="text" id="settingDeviceId" readonly class="w-full px-3.5 py-2.5 rust-input rounded-xl font-mono text-[#60a5fa] font-bold select-all">
+                  <button id="btnSettingRegenId" class="px-3 py-2.5 rounded-xl bg-[#11141a] hover:bg-[#222834] text-slate-300 border border-[#2c3340] transition shrink-0" title="Regenerar ID">
                     <i data-lucide="refresh-cw" class="w-4 h-4"></i>
                   </button>
                 </div>
-                <p class="text-[10px] text-slate-500 mt-1">Este número identifica a tu equipo para conexiones entrantes.</p>
               </div>
 
-              <div class="pt-3 border-t border-slate-800 flex items-center justify-between">
+              <div class="pt-3 border-t border-[#2c3340] flex items-center justify-between">
                 <div>
-                  <span class="text-slate-200 font-semibold block">Efectos y Alertas Sonoras</span>
-                  <span class="text-slate-500 text-[11px]">Sonidos de llamada entrante, conexión y mensajes de chat</span>
+                  <span class="text-slate-200 font-semibold block">Efectos de Sonido</span>
+                  <span class="text-slate-500 text-[11px]">Alertas de conexión y mensajes de chat</span>
                 </div>
                 <label class="relative inline-flex items-center cursor-pointer">
                   <input type="checkbox" id="settingSoundEffects" class="sr-only peer" checked>
-                  <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                  <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#0d6efd]"></div>
                 </label>
               </div>
             </div>
           </div>
 
-          <!-- PESTAÑA 2: SEGURIDAD Y PERMISOS -->
+          <!-- PESTAÑA 2: SEGURIDAD & ACCESO DESATENDIDO -->
           <div id="tabSecurity" class="settings-tab-pane space-y-5 hidden">
             <div>
-              <h3 class="text-sm font-bold text-white mb-1">Permisos de Acceso y Control</h3>
-              <p class="text-slate-400 text-[11px]">Define qué pueden hacer los participantes que se conecten a tu equipo.</p>
+              <h3 class="text-sm font-bold text-white mb-1">Seguridad y Acceso Desatendido</h3>
+              <p class="text-slate-400 text-[11px]">Configura tu contraseña fija permanente para conectar sin confirmar manualmente.</p>
             </div>
 
             <div class="space-y-4">
-              <div class="p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
+              <!-- Campo Contraseña Desatendida Fija -->
+              <div class="p-4 rounded-xl rust-input space-y-2">
+                <label class="block text-slate-200 font-semibold">Contraseña Permanente de Acceso Desatendido</label>
+                <div class="flex items-center space-x-2">
+                  <input type="password" id="settingPermanentPassword" placeholder="Ej. MiPassSeguro2026" class="w-full px-3.5 py-2 rust-input rounded-xl text-white font-mono text-sm">
+                  <button type="button" id="btnTogglePermanentPass" class="p-2 bg-[#1b2029] hover:bg-[#222834] text-slate-400 hover:text-white rounded-xl border border-[#2c3340]">
+                    <i data-lucide="eye" class="w-4 h-4"></i>
+                  </button>
+                </div>
+                <p class="text-[10px] text-slate-500">Si estableces una contraseña, quien la introduzca podrá conectarse directamente sin esperar autorización manual.</p>
+              </div>
+
+              <!-- Permisos de Control -->
+              <div class="p-3.5 rounded-xl rust-input flex items-center justify-between">
                 <div>
                   <span class="text-slate-200 font-semibold flex items-center">
-                    <i data-lucide="gamepad-2" class="w-4 h-4 mr-2 text-emerald-400"></i> Permitir Control de Ratón y Teclado
+                    <i data-lucide="mouse-pointer-click" class="w-4 h-4 mr-2 text-emerald-400"></i> Permitir Control de Ratón y Teclado
                   </span>
-                  <span class="text-slate-500 text-[11px] block mt-0.5">El operador remoto puede interactuar con clics, rueda y pulsaciones de teclas</span>
+                  <span class="text-slate-500 text-[11px] block mt-0.5">El operador puede mover el ratón, hacer clics y escribir</span>
                 </div>
                 <label class="relative inline-flex items-center cursor-pointer">
                   <input type="checkbox" id="settingAllowControl" class="sr-only peer" checked>
@@ -903,29 +967,17 @@
                 </label>
               </div>
 
-              <div class="p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
+              <!-- Autorización obligatoria cuando no hay contraseña -->
+              <div class="p-3.5 rounded-xl rust-input flex items-center justify-between">
                 <div>
                   <span class="text-slate-200 font-semibold flex items-center">
-                    <i data-lucide="shield-alert" class="w-4 h-4 mr-2 text-indigo-400"></i> Autorización Previa Obligatoria
+                    <i data-lucide="shield-alert" class="w-4 h-4 mr-2 text-[#60a5fa]"></i> Autorización Previa Obligatoria (sin contraseña)
                   </span>
-                  <span class="text-slate-500 text-[11px] block mt-0.5">Siempre solicitar tu aprobación en pantalla antes de aceptar a cualquier participante</span>
+                  <span class="text-slate-500 text-[11px] block mt-0.5">Mostrar siempre modal de confirmación si no se envía la contraseña correcta</span>
                 </div>
                 <label class="relative inline-flex items-center cursor-pointer">
                   <input type="checkbox" id="settingRequireAuth" class="sr-only peer" checked>
-                  <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
-                </label>
-              </div>
-
-              <div class="p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
-                <div>
-                  <span class="text-slate-200 font-semibold flex items-center">
-                    <i data-lucide="mouse-pointer" class="w-4 h-4 mr-2 text-rose-400"></i> Permitir Puntero Láser y Anotaciones
-                  </span>
-                  <span class="text-slate-500 text-[11px] block mt-0.5">Los participantes pueden dibujar trazos temporales y señalar con el láser guía</span>
-                </div>
-                <label class="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" id="settingAllowLaser" class="sr-only peer" checked>
-                  <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                  <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#0d6efd]"></div>
                 </label>
               </div>
             </div>
@@ -935,46 +987,45 @@
           <div id="tabScreen" class="settings-tab-pane space-y-5 hidden">
             <div>
               <h3 class="text-sm font-bold text-white mb-1">Transmisión de Pantalla</h3>
-              <p class="text-slate-400 text-[11px]">Calidad gráfica, fluidez de fotogramas y ajuste de video.</p>
+              <p class="text-slate-400 text-[11px]">Configura la resolución original, fotogramas por segundo y calidad.</p>
             </div>
 
             <div class="space-y-4">
               <div>
                 <label class="block text-slate-300 font-semibold mb-1.5">Tasa de Fotogramas (FPS)</label>
-                <select id="settingScreenFps" class="w-full max-w-sm px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                <select id="settingScreenFps" class="w-full max-w-sm px-3.5 py-2.5 rust-input rounded-xl text-white">
                   <option value="60">60 FPS - Máxima fluidez y baja latencia (Recomendado)</option>
                   <option value="30">30 FPS - Ahorro de ancho de banda</option>
                 </select>
               </div>
 
               <div>
-                <label class="block text-slate-300 font-semibold mb-1.5">Calidad de Transmisión</label>
-                <select id="settingScreenQuality" class="w-full max-w-sm px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                  <option value="auto">Auto — 8 Mbps (1080p balanceado, Recomendado)</option>
+                <label class="block text-slate-300 font-semibold mb-1.5">Perfil de Calidad de Transmisión</label>
+                <select id="settingScreenQuality" class="w-full max-w-sm px-3.5 py-2.5 rust-input rounded-xl text-white">
+                  <option value="auto">Auto — 8 Mbps (1080p equilibrado, Recomendado)</option>
                   <option value="1080p">HD 1080p — 8 Mbps (nitidez estándar)</option>
-                  <option value="1440p">QHD 1440p — 15 Mbps (alta nitidez, requiere buena red)</option>
-                  <option value="4k">UHD 4K — 25 Mbps (máxima resolución, red de alta velocidad)</option>
+                  <option value="1440p">QHD 1440p — 15 Mbps (alta nitidez para texto pequeño)</option>
+                  <option value="4k">UHD 4K — 25 Mbps (máxima resolución sin compresión)</option>
                 </select>
-                <p class="text-[10px] text-slate-500 mt-1">La resolución capturada depende del monitor fuente. El bitrate controla la nitidez del video comprimido.</p>
               </div>
 
               <div>
                 <label class="block text-slate-300 font-semibold mb-1.5">Escala por Defecto del Visor</label>
-                <select id="settingDefaultScale" class="w-full max-w-sm px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                  <option value="contain">Ajustar (Contain - Mantiene proporciones sin cortar)</option>
-                  <option value="fill">Llenar (Fill - Estira a toda el área)</option>
-                  <option value="original">1:1 Original (Resolución nativa del emisor)</option>
+                <select id="settingDefaultScale" class="w-full max-w-sm px-3.5 py-2.5 rust-input rounded-xl text-white">
+                  <option value="contain">Ajustar a Ventana (Mantiene proporciones)</option>
+                  <option value="fill">Llenar todo el espacio (Estirar)</option>
+                  <option value="original">1:1 Resolución Original (Píxel por píxel)</option>
                 </select>
               </div>
 
-              <div class="pt-3 border-t border-slate-800 flex items-center justify-between">
+              <div class="pt-3 border-t border-[#2c3340] flex items-center justify-between">
                 <div>
                   <span class="text-slate-200 font-semibold block">Modo Anti-Espejo</span>
-                  <span class="text-slate-500 text-[11px]">Oculta el video repetido en el anfitrión para evitar el túnel infinito</span>
+                  <span class="text-slate-500 text-[11px]">Oculta el video repetido en el anfitrión para evitar túnel infinito</span>
                 </div>
                 <label class="relative inline-flex items-center cursor-pointer">
                   <input type="checkbox" id="settingAntiMirror" class="sr-only peer" checked>
-                  <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                  <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#0d6efd]"></div>
                 </label>
               </div>
             </div>
@@ -983,30 +1034,29 @@
           <!-- PESTAÑA 4: AUDIO Y VOZ -->
           <div id="tabAudio" class="settings-tab-pane space-y-5 hidden">
             <div>
-              <h3 class="text-sm font-bold text-white mb-1">Configuración de Llamadas de Voz</h3>
-              <p class="text-slate-400 text-[11px]">Calibración de micrófono, reducción de ruido y prueba de altavoces.</p>
+              <h3 class="text-sm font-bold text-white mb-1">Llamadas de Voz en Sesión</h3>
+              <p class="text-slate-400 text-[11px]">Calibración de micrófono y reducción de ruido acústico.</p>
             </div>
 
             <div class="space-y-4">
-              <div class="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-3">
+              <div class="p-4 rounded-xl rust-input space-y-3">
                 <div class="flex items-center justify-between">
                   <span class="text-slate-300 font-semibold flex items-center">
                     <i data-lucide="mic" class="w-4 h-4 mr-2 text-emerald-400"></i> Medidor de Entrada de Micrófono
                   </span>
-                  <button id="btnStartMicTest" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-300 transition">
+                  <button id="btnStartMicTest" class="px-2.5 py-1 rounded-lg bg-[#1b2029] hover:bg-[#222834] text-[11px] text-slate-300 border border-[#2c3340] transition">
                     Probar Entrada
                   </button>
                 </div>
-                <div class="h-3 bg-slate-800 rounded-full overflow-hidden p-0.5 border border-slate-700/80">
+                <div class="h-3 bg-slate-800 rounded-full overflow-hidden p-0.5 border border-[#2c3340]">
                   <div id="micVolumeBar" class="h-full bg-gradient-to-r from-emerald-500 via-amber-400 to-rose-500 rounded-full w-0 transition-all duration-75"></div>
                 </div>
-                <p class="text-[10px] text-slate-500">Habla para verificar que la barra se mueva en color verde.</p>
               </div>
 
               <div class="flex items-center justify-between">
                 <div>
-                  <span class="text-slate-200 font-semibold block">Cancelación de Eco Acústico (AEC)</span>
-                  <span class="text-slate-500 text-[11px]">Previene que los altavoces retroalimenten al micrófono</span>
+                  <span class="text-slate-200 font-semibold block">Cancelación de Eco (AEC)</span>
+                  <span class="text-slate-500 text-[11px]">Evita la retroalimentación de los altavoces</span>
                 </div>
                 <label class="relative inline-flex items-center cursor-pointer">
                   <input type="checkbox" id="settingEchoCancellation" class="sr-only peer" checked>
@@ -1017,7 +1067,7 @@
               <div class="flex items-center justify-between">
                 <div>
                   <span class="text-slate-200 font-semibold block">Supresión de Ruido Ambiental</span>
-                  <span class="text-slate-500 text-[11px]">Filtra ruidos de fondo, teclados y ventiladores</span>
+                  <span class="text-slate-500 text-[11px]">Filtra ruidos de fondo y ventiladores</span>
                 </div>
                 <label class="relative inline-flex items-center cursor-pointer">
                   <input type="checkbox" id="settingNoiseSuppression" class="sr-only peer" checked>
@@ -1027,54 +1077,49 @@
             </div>
           </div>
 
-          <!-- PESTAÑA 5: RED Y AGENTE WINDOWS -->
+          <!-- PESTAÑA 5: RED Y SERVIDOR (SELF-HOSTING) -->
           <div id="tabNetwork" class="settings-tab-pane space-y-5 hidden">
             <div>
-              <h3 class="text-sm font-bold text-white mb-1">Diagnóstico de Red y Control Total de Windows</h3>
-              <p class="text-slate-400 text-[11px]">Métricas de latencia y asistente para mover el ratón físico fuera del navegador.</p>
+              <h3 class="text-sm font-bold text-white mb-1">Servidor de Señalización y Relay (Self-Hosting)</h3>
+              <p class="text-slate-400 text-[11px]">Información de la infraestructura de conexión P2P y asistencia física en Windows.</p>
             </div>
 
             <div class="grid grid-cols-2 gap-3">
-              <div class="p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800">
+              <div class="p-3.5 rounded-xl rust-input">
                 <span class="text-slate-400 text-[10px] uppercase font-bold tracking-wider block mb-1">Latencia al Servidor</span>
                 <div class="flex items-baseline space-x-1.5">
                   <span id="pingValueDisplay" class="font-mono text-xl font-extrabold text-emerald-400">--</span>
                   <span class="text-[11px] text-slate-500">ms</span>
                 </div>
               </div>
-              <div class="p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800">
-                <span class="text-slate-400 text-[10px] uppercase font-bold tracking-wider block mb-1">Estado de Conexión</span>
+              <div class="p-3.5 rounded-xl rust-input">
+                <span class="text-slate-400 text-[10px] uppercase font-bold tracking-wider block mb-1">Infraestructura</span>
                 <span id="networkStatusDisplay" class="font-semibold text-xs text-emerald-400 flex items-center mt-1">
                   <span class="w-2 h-2 rounded-full bg-emerald-400 mr-1.5 animate-pulse"></span>
-                  WebSockets Activo
+                  Servidor RustDesk Web
                 </span>
               </div>
             </div>
 
-            <!-- Cuadro de Control Total del Sistema Operativo -->
-            <div class="p-4 rounded-2xl bg-indigo-950/40 border border-indigo-700/40 space-y-2.5">
-              <div class="flex items-center space-x-2 text-indigo-300 font-bold">
+            <!-- Asistente de Control Total de Windows -->
+            <div class="p-4 rounded-xl rust-input space-y-2.5">
+              <div class="flex items-center space-x-2 text-emerald-300 font-bold">
                 <i data-lucide="cpu" class="w-4 h-4"></i>
-                <span>¿Quieres que muevan el ratón real de Windows fuera del navegador?</span>
+                <span>Asistente de Control Físico de Windows (OS Agent)</span>
               </div>
               <p class="text-slate-300 leading-relaxed text-[11px]">
-                Por seguridad del sistema operativo, ningún navegador web puede mover el cursor de Windows en otras ventanas sin un asistente. Si deseas que el operador controle cualquier programa de tu PC, ejecuta el asistente nativo de Conecty:
+                Ningún navegador web puede mover el cursor en otras ventanas sin un componente local por seguridad del sistema operativo. Ejecuta el asistente para habilitar clics sobre cualquier programa de Windows:
               </p>
               <div class="flex flex-col sm:flex-row gap-2 pt-1">
-                <button id="btnDownloadAgentSettings" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl shadow-md flex items-center justify-center space-x-1.5 transition">
+                <button id="btnDownloadAgentSettings" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl text-xs flex items-center justify-center space-x-1.5 transition">
                   <i data-lucide="download" class="w-3.5 h-3.5"></i>
                   <span>Descargar Asistente (.bat)</span>
                 </button>
-                <div class="flex-1 p-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-indigo-200 flex items-center justify-between">
-                  <code id="cmdAgentDisplay">irm "https://conecty.appzplay.online/api/download-agent-ps1" | iex</code>
-                  <button id="btnCopyAgentCmd" class="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white" title="Copiar comando">
-                    <i data-lucide="copy" class="w-3.5 h-3.5"></i>
-                  </button>
-                </div>
+                <button id="btnCopyAgentCmd" class="px-4 py-2 bg-[#11141a] hover:bg-[#222834] text-slate-300 hover:text-white border border-[#2c3340] font-semibold rounded-xl text-xs flex items-center justify-center space-x-1.5 transition">
+                  <i data-lucide="terminal" class="w-3.5 h-3.5 text-[#60a5fa]"></i>
+                  <span>Copiar Comando PowerShell</span>
+                </button>
               </div>
-              <p class="text-[10px] text-slate-400">
-                * El modo web estándar ya funciona con clics, arrastre, scroll y teclado interactivo dentro de la ventana de Conecty.
-              </p>
             </div>
           </div>
 
@@ -1082,11 +1127,11 @@
       </div>
 
       <!-- Footer del Modal -->
-      <div class="h-14 px-6 border-t border-slate-800 bg-slate-900/60 flex items-center justify-between shrink-0">
+      <div class="h-14 px-6 border-t border-[#2c3340] bg-[#181d25] flex items-center justify-between shrink-0">
         <span id="settingsSavedToast" class="text-emerald-400 text-[11px] font-semibold opacity-0 transition-opacity">
           ✓ Cambios guardados automáticamente
         </span>
-        <button id="btnSaveCloseSettings" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition shadow">
+        <button id="btnSaveCloseSettings" class="px-4 py-2 rounded-xl bg-[#0d6efd] hover:bg-[#0b5ed7] text-white font-semibold text-xs transition shadow">
           Listo
         </button>
       </div>
@@ -1094,21 +1139,64 @@
     </div>
   </div>
 
+  <!-- ================= MODAL DE AUTORIZACIÓN ENTRANTE (HOST POPUP) ================= -->
+  <div id="incomingRequestModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md hidden transition-all duration-300">
+    <div class="w-full max-w-sm rust-panel p-6 rounded-2xl shadow-2xl border border-blue-500/40 text-center space-y-4">
+      <div id="incomingRequesterAvatar" class="w-16 h-16 rounded-2xl bg-[#0d6efd]/20 text-[#60a5fa] border border-[#0d6efd]/40 mx-auto flex items-center justify-center text-xl font-bold">
+        ?
+      </div>
+      <div>
+        <h3 class="text-base font-bold text-white mb-1">Solicitud de Conexión Entrante</h3>
+        <p class="text-xs text-slate-300">
+          <strong id="incomingRequesterName" class="text-[#60a5fa]">Un usuario</strong> quiere conectarse a tu escritorio:
+        </p>
+        <span id="incomingRequesterDeviceId" class="font-mono text-xs text-slate-400 block mt-1">ID: --- --- ---</span>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3 pt-2">
+        <button id="btnRejectConnection" class="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-semibold rounded-xl text-xs transition border border-[#2c3340]">
+          Rechazar
+        </button>
+        <button id="btnAcceptConnection" class="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition shadow shadow-emerald-600/30">
+          Permitir Acceso
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= MODAL ESPERANDO APROBACIÓN (OPERATOR WAITING) ================= -->
+  <div id="waitingApprovalModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md hidden transition-all duration-300">
+    <div class="w-full max-w-sm rust-panel p-6 rounded-2xl shadow-2xl border border-[#2c3340] text-center space-y-4">
+      <div class="w-16 h-16 rounded-2xl bg-[#0d6efd]/20 text-[#60a5fa] border border-[#0d6efd]/30 mx-auto flex items-center justify-center">
+        <i data-lucide="loader" class="w-8 h-8 animate-spin"></i>
+      </div>
+      <div>
+        <h3 class="text-base font-bold text-white mb-1">Esperando Aprobación</h3>
+        <p class="text-xs text-slate-400">
+          Esperando que <strong id="waitingHostNameText" class="text-slate-200">el anfitrión</strong> autorice tu acceso en:
+        </p>
+        <span id="waitingTargetIdDisplay" class="font-mono text-sm text-[#60a5fa] font-bold block mt-1">--- --- ---</span>
+      </div>
+      <button id="btnCancelWaitingApproval" class="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition border border-[#2c3340]">
+        Cancelar Solicitud
+      </button>
+    </div>
+  </div>
+
   <!-- Toast de Notificaciones -->
   <div id="toastContainer" class="fixed top-20 right-6 z-50 flex flex-col space-y-2 pointer-events-none"></div>
 
-  <!-- Contenedor de Audio Remoto (fuera de pantalla para evitar suspensión de audio en navegadores) -->
+  <!-- Contenedor de Audio Remoto -->
   <div id="remoteAudios" style="position: fixed; bottom: -9999px; left: -9999px; width: 1px; height: 1px; opacity: 0; pointer-events: none;"></div>
 
-  <!-- Scripts con versionado para evitar caché obsoleto del navegador -->
+  <!-- Scripts -->
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/js/laser.js?v=2.0.7"></script>
-  <script src="/js/webrtc.js?v=2.0.7"></script>
-  <script src="/js/app.js?v=2.0.7"></script>
+  <script src="/js/laser.js?v=3.0.0-rustdesk"></script>
+  <script src="/js/webrtc.js?v=3.0.0-rustdesk"></script>
+  <script src="/js/app.js?v=3.0.0-rustdesk"></script>
   <script>
-    // Inicializar iconos de Lucide
     document.addEventListener("DOMContentLoaded", () => {
-      lucide.createIcons();
+      if (window.lucide) lucide.createIcons();
     });
   </script>
 </body>

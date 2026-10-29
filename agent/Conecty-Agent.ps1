@@ -49,6 +49,12 @@ public class Win32InputNative {
 
     [DllImport("user32.dll")]
     public static extern int GetSystemMetrics(int nIndex);
+
+    [DllImport("user32.dll")]
+    public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, int dwExtraInfo);
+
+    [DllImport("user32.dll")]
+    public static extern bool LockWorkStation();
 }
 "@
 
@@ -189,6 +195,35 @@ while ($ws.State -eq [System.Net.WebSockets.WebSocketState]::Open) {
             [System.Windows.Forms.SendKeys]::SendWait(" ")
           }
           Write-Host "  [TECLA] $key" -ForegroundColor Cyan
+        }
+        elseif ($type -eq "system-key" -and $null -ne $ev.action) {
+          $act = [string]$ev.action
+          if ($act -eq "win") {
+            [Win32InputNative]::keybd_event(0x5B, 0, 0, 0)
+            Start-Sleep -Milliseconds 30
+            [Win32InputNative]::keybd_event(0x5B, 0, 2, 0)
+            Write-Host "  [SISTEMA] Tecla Windows" -ForegroundColor Cyan
+          } elseif ($act -eq "win-d") {
+            [Win32InputNative]::keybd_event(0x5B, 0, 0, 0)
+            [Win32InputNative]::keybd_event(0x44, 0, 0, 0)
+            Start-Sleep -Milliseconds 30
+            [Win32InputNative]::keybd_event(0x44, 0, 2, 0)
+            [Win32InputNative]::keybd_event(0x5B, 0, 2, 0)
+            Write-Host "  [SISTEMA] Mostrar Escritorio (Win+D)" -ForegroundColor Cyan
+          } elseif ($act -eq "alt-tab") {
+            [Win32InputNative]::keybd_event(0x12, 0, 0, 0)
+            [Win32InputNative]::keybd_event(0x09, 0, 0, 0)
+            Start-Sleep -Milliseconds 40
+            [Win32InputNative]::keybd_event(0x09, 0, 2, 0)
+            [Win32InputNative]::keybd_event(0x12, 0, 2, 0)
+            Write-Host "  [SISTEMA] Cambiar Ventana (Alt+Tab)" -ForegroundColor Cyan
+          } elseif ($act -eq "taskmgr" -or $act -eq "ctrl-alt-del") {
+            Start-Process "taskmgr.exe"
+            Write-Host "  [SISTEMA] Administrador de Tareas" -ForegroundColor Cyan
+          } elseif ($act -eq "lock") {
+            [Win32InputNative]::LockWorkStation() | Out-Null
+            Write-Host "  [SISTEMA] Bloquear Equipo" -ForegroundColor Cyan
+          }
         }
       }
     }

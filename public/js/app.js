@@ -168,6 +168,57 @@ document.addEventListener('DOMContentLoaded', async () => {
   let authorizedControllerId = null;
   let isMyHandRaised = false;
 
+  // ================= ELEMENTOS DOM ESTILO RUSTDESK WEB CLIENT =================
+  // Contraseñas y Acceso Desatendido
+  const myPasswordDisplay = document.getElementById('myPasswordDisplay');
+  const btnTogglePasswordVisibility = document.getElementById('btnTogglePasswordVisibility');
+  const passwordEyeIcon = document.getElementById('passwordEyeIcon');
+  const btnRegenPassword = document.getElementById('btnRegenPassword');
+  const btnCopyPassword = document.getElementById('btnCopyPassword');
+  const unattendedStatusText = document.getElementById('unattendedStatusText');
+  const btnOpenUnattendedSettings = document.getElementById('btnOpenUnattendedSettings');
+  const settingPermanentPassword = document.getElementById('settingPermanentPassword');
+  const btnTogglePermanentPass = document.getElementById('btnTogglePermanentPass');
+
+  // Modal de Autenticación con Contraseña
+  const passwordModal = document.getElementById('passwordModal');
+  const btnClosePasswordModal = document.getElementById('btnClosePasswordModal');
+  const targetPasswordModalDisplay = document.getElementById('targetPasswordModalDisplay');
+  const remotePasswordInput = document.getElementById('remotePasswordInput');
+  const btnToggleRemotePassVisibility = document.getElementById('btnToggleRemotePassVisibility');
+  const remotePassEyeIcon = document.getElementById('remotePassEyeIcon');
+  const rememberPasswordCheck = document.getElementById('rememberPasswordCheck');
+  const btnConnectWithPassword = document.getElementById('btnConnectWithPassword');
+  const btnRequestManualApproval = document.getElementById('btnRequestManualApproval');
+  const btnStartFileTransferLobby = document.getElementById('btnStartFileTransferLobby');
+
+  // Transferencia de Archivos P2P
+  const fileTransferModal = document.getElementById('fileTransferModal');
+  const fileTransferPeerDisplay = document.getElementById('fileTransferPeerDisplay');
+  const btnCloseFileTransfer = document.getElementById('btnCloseFileTransfer');
+  const dropZone = document.getElementById('dropZone');
+  const localFileInput = document.getElementById('localFileInput');
+  const localFilesQueue = document.getElementById('localFilesQueue');
+  const btnSendFiles = document.getElementById('btnSendFiles');
+  const remoteFilesList = document.getElementById('remoteFilesList');
+  const receivedFilesCount = document.getElementById('receivedFilesCount');
+  const emptyReceivedNotice = document.getElementById('emptyReceivedNotice');
+  const fileTransferProgressContainer = document.getElementById('fileTransferProgressContainer');
+  const fileTransferProgressText = document.getElementById('fileTransferProgressText');
+  const fileTransferProgressPercent = document.getElementById('fileTransferProgressPercent');
+  const fileTransferProgressFill = document.getElementById('fileTransferProgressFill');
+  const btnToolbarFileTransfer = document.getElementById('btnToolbarFileTransfer');
+
+  // Barra Flotante Superior: Teclas y Acciones de Sistema
+  const btnSystemKeysDropdown = document.getElementById('btnSystemKeysDropdown');
+  const systemKeysMenu = document.getElementById('systemKeysMenu');
+  const btnSendCAD = document.getElementById('btnSendCAD');
+  const btnSendWinKey = document.getElementById('btnSendWinKey');
+  const btnSendWinD = document.getElementById('btnSendWinD');
+  const btnSendAltTab = document.getElementById('btnSendAltTab');
+  const btnSendTaskMgr = document.getElementById('btnSendTaskMgr');
+  const btnSendLock = document.getElementById('btnSendLock');
+
   // ================= 1. GESTIÓN DE ID Y CONFIGURACIONES (ANYDESK STYLE) =================
   let myDeviceId = localStorage.getItem('conecty_device_id');
   if (!myDeviceId || myDeviceId.length !== 9 || !/^\d+$/.test(myDeviceId)) {
@@ -185,7 +236,111 @@ document.addEventListener('DOMContentLoaded', async () => {
     return id;
   }
 
+  function copyTextToClipboard(text, successMessage) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        showToast(successMessage, 'success');
+      }).catch(() => {
+        fallbackCopyText(text, successMessage);
+      });
+    } else {
+      fallbackCopyText(text, successMessage);
+    }
+  }
+
+  function fallbackCopyText(text, successMessage) {
+    try {
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      textArea.style.top = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      const successful = document.execCommand('copy');
+      textArea.remove();
+      if (successful) {
+        showToast(successMessage, 'success');
+      } else {
+        prompt('Copia manualmente este texto:', text);
+      }
+    } catch (err) {
+      prompt('Copia manualmente este texto:', text);
+    }
+  }
+
   myDeviceIdDisplay.textContent = formatDeviceId(myDeviceId);
+
+  // RustDesk One-Time Password & Acceso Desatendido
+  function generateOneTimePassword() {
+    return Math.random().toString(36).substring(2, 8).toUpperCase();
+  }
+  let myOneTimePassword = generateOneTimePassword();
+
+  function updateUnattendedStatusUI() {
+    const permPass = localStorage.getItem('conecty_permanent_password') || '';
+    if (unattendedStatusText) {
+      if (permPass.trim()) {
+        unattendedStatusText.innerHTML = '<span class="text-emerald-400 font-semibold flex items-center"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5 animate-pulse"></span>Activado (Contraseña fija permanente configurada)</span>';
+      } else {
+        unattendedStatusText.textContent = 'Configura una contraseña fija para conectar sin aprobación manual';
+      }
+    }
+  }
+
+  if (myPasswordDisplay) {
+    myPasswordDisplay.value = myOneTimePassword;
+  }
+  updateUnattendedStatusUI();
+
+  if (btnTogglePasswordVisibility && myPasswordDisplay) {
+    btnTogglePasswordVisibility.addEventListener('click', () => {
+      const isPass = myPasswordDisplay.type === 'password';
+      myPasswordDisplay.type = isPass ? 'text' : 'password';
+      if (passwordEyeIcon) {
+        passwordEyeIcon.setAttribute('data-lucide', isPass ? 'eye-off' : 'eye');
+        if (window.lucide) lucide.createIcons();
+      }
+    });
+  }
+
+  if (btnRegenPassword && myPasswordDisplay) {
+    btnRegenPassword.addEventListener('click', () => {
+      myOneTimePassword = generateOneTimePassword();
+      myPasswordDisplay.value = myOneTimePassword;
+      if (socket && socket.connected) {
+        socket.emit('set-device-password', {
+          password: myOneTimePassword,
+          permanentPassword: localStorage.getItem('conecty_permanent_password') || ''
+        });
+      }
+      showToast('Nueva contraseña temporal generada: ' + myOneTimePassword, 'success');
+    });
+  }
+
+  if (btnCopyPassword && myPasswordDisplay) {
+    btnCopyPassword.addEventListener('click', () => {
+      copyTextToClipboard(myOneTimePassword, '📋 Contraseña copiada: ' + myOneTimePassword);
+    });
+  }
+
+  if (btnOpenUnattendedSettings) {
+    btnOpenUnattendedSettings.addEventListener('click', () => {
+      openSettings();
+      const permTabBtn = document.querySelector('.settings-tab-btn[data-tab="permissions"]');
+      if (permTabBtn) permTabBtn.click();
+      if (settingPermanentPassword) {
+        setTimeout(() => settingPermanentPassword.focus(), 150);
+      }
+    });
+  }
+
+  if (btnTogglePermanentPass && settingPermanentPassword) {
+    btnTogglePermanentPass.addEventListener('click', () => {
+      settingPermanentPassword.type = settingPermanentPassword.type === 'password' ? 'text' : 'password';
+    });
+  }
 
   // Configuraciones de Usuario Persistentes
   const defaultSettings = {
@@ -217,6 +372,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function saveSettings() {
     localStorage.setItem('conecty_settings', JSON.stringify(userSettings));
+    if (settingPermanentPassword) {
+      const permPass = settingPermanentPassword.value.trim();
+      localStorage.setItem('conecty_permanent_password', permPass);
+      updateUnattendedStatusUI();
+      if (socket && socket.connected) {
+        socket.emit('set-device-password', {
+          password: myOneTimePassword,
+          permanentPassword: permPass
+        });
+      }
+    }
     if (settingsSavedToast) {
       settingsSavedToast.classList.remove('opacity-0');
       setTimeout(() => settingsSavedToast.classList.add('opacity-0'), 1500);
@@ -245,6 +411,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     settingAntiMirror.checked = userSettings.antiMirror;
     settingEchoCancellation.checked = userSettings.echoCancellation;
     settingNoiseSuppression.checked = userSettings.noiseSuppression;
+
+    if (settingPermanentPassword) {
+      settingPermanentPassword.value = localStorage.getItem('conecty_permanent_password') || '';
+    }
 
     if (toggleHostAllowControl) {
       toggleHostAllowControl.checked = userSettings.allowControl;
@@ -467,9 +637,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       myDeviceId = Math.floor(100000000 + Math.random() * 900000000).toString();
       localStorage.setItem('conecty_device_id', myDeviceId);
       myDeviceIdDisplay.textContent = formatDeviceId(myDeviceId);
-  if (typeof updateAgentCommandDisplay === 'function') {
-    updateAgentCommandDisplay();
-  }
+      if (typeof updateAgentCommandDisplay === 'function') {
+        updateAgentCommandDisplay();
+      }
       settingDeviceId.value = formatDeviceId(myDeviceId);
       registerMyDeviceOnServer();
       showToast('Nuevo ID de dispositivo generado: ' + formatDeviceId(myDeviceId), 'success');
@@ -536,17 +706,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Copiar Mi ID Numérico
   btnCopyMyId.addEventListener('click', () => {
-    navigator.clipboard.writeText(formatDeviceId(myDeviceId)).then(() => {
-      showToast('📋 Número de tu dispositivo copiado: ' + formatDeviceId(myDeviceId), 'success');
-    });
+    copyTextToClipboard(formatDeviceId(myDeviceId), '📋 Número de tu dispositivo copiado: ' + formatDeviceId(myDeviceId));
   });
 
   // Copiar Enlace Directo
   btnCopyMyDirectLink.addEventListener('click', () => {
     const directUrl = `${window.location.origin}/?connect=${myDeviceId}`;
-    navigator.clipboard.writeText(directUrl).then(() => {
-      showToast('🔗 Enlace directo copiado para compartir', 'success');
-    });
+    copyTextToClipboard(directUrl, '🔗 Enlace directo copiado para compartir');
   });
 
   // Pre-llenar si viene en la URL (?connect=xxx o ?id=xxx o ?room=xxx)
@@ -755,7 +921,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const currentName = userNameInput.value.trim() || ('Usuario-' + myDeviceId.substring(0, 4));
     socket.emit('register-device', {
       deviceId: myDeviceId,
-      userName: currentName
+      userName: currentName,
+      password: myOneTimePassword,
+      permanentPassword: localStorage.getItem('conecty_permanent_password') || ''
     });
   }
 
@@ -853,15 +1021,142 @@ document.addEventListener('DOMContentLoaded', async () => {
     showToast('Solicitud de conexión rechazada', 'info');
   });
 
-  // B) EL INVITADO SOLICITA CONEXIÓN A OTRO EQUIPO
+  // B) EL INVITADO SOLICITA CONEXIÓN A OTRO EQUIPO (ESTILO RUSTDESK)
+  let currentPendingTargetId = null;
+  let currentPendingMode = 'screen'; // 'screen' | 'file-transfer'
+
+  function getSavedPasswords() {
+    try {
+      return JSON.parse(localStorage.getItem('conecty_saved_passwords') || '{}');
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function savePasswordForTarget(targetId, pass) {
+    const map = getSavedPasswords();
+    if (pass) {
+      map[targetId] = pass;
+    } else {
+      delete map[targetId];
+    }
+    localStorage.setItem('conecty_saved_passwords', JSON.stringify(map));
+  }
+
+  function openPasswordModal(targetId, mode = 'screen') {
+    currentPendingTargetId = targetId;
+    currentPendingMode = mode;
+    if (targetPasswordModalDisplay) {
+      targetPasswordModalDisplay.textContent = formatDeviceId(targetId);
+    }
+    const saved = getSavedPasswords();
+    if (remotePasswordInput) {
+      if (saved[targetId]) {
+        remotePasswordInput.value = saved[targetId];
+        if (rememberPasswordCheck) rememberPasswordCheck.checked = true;
+      } else {
+        remotePasswordInput.value = '';
+        if (rememberPasswordCheck) rememberPasswordCheck.checked = false;
+      }
+    }
+    if (passwordModal) {
+      passwordModal.classList.remove('hidden');
+      if (remotePasswordInput) setTimeout(() => remotePasswordInput.focus(), 100);
+      if (window.lucide) lucide.createIcons();
+    }
+  }
+
+  if (btnClosePasswordModal && passwordModal) {
+    btnClosePasswordModal.addEventListener('click', () => {
+      passwordModal.classList.add('hidden');
+    });
+  }
+
+  if (btnToggleRemotePassVisibility && remotePasswordInput) {
+    btnToggleRemotePassVisibility.addEventListener('click', () => {
+      const isPass = remotePasswordInput.type === 'password';
+      remotePasswordInput.type = isPass ? 'text' : 'password';
+      if (remotePassEyeIcon) {
+        remotePassEyeIcon.setAttribute('data-lucide', isPass ? 'eye-off' : 'eye');
+        if (window.lucide) lucide.createIcons();
+      }
+    });
+  }
+
+  if (btnConnectWithPassword) {
+    btnConnectWithPassword.addEventListener('click', () => {
+      if (!currentPendingTargetId) return;
+      const pass = remotePasswordInput ? remotePasswordInput.value.trim() : '';
+      if (!pass) {
+        showToast('Por favor introduce la contraseña del equipo remoto', 'info');
+        if (remotePasswordInput) remotePasswordInput.focus();
+        return;
+      }
+
+      if (rememberPasswordCheck && rememberPasswordCheck.checked) {
+        savePasswordForTarget(currentPendingTargetId, pass);
+      } else {
+        savePasswordForTarget(currentPendingTargetId, null);
+      }
+
+      const name = userNameInput.value.trim() || ('Usuario-' + myDeviceId.substring(0, 4));
+      localStorage.setItem('conecty_user_name', name);
+
+      if (passwordModal) passwordModal.classList.add('hidden');
+      if (waitingTargetIdDisplay) waitingTargetIdDisplay.textContent = formatDeviceId(currentPendingTargetId);
+      if (waitingHostNameText) waitingHostNameText.textContent = 'Autenticando con contraseña...';
+      if (waitingApprovalModal) waitingApprovalModal.classList.remove('hidden');
+
+      socket.emit('request-connection', {
+        targetDeviceId: currentPendingTargetId,
+        requesterName: name,
+        password: pass,
+        mode: currentPendingMode
+      });
+    });
+  }
+
+  if (btnRequestManualApproval) {
+    btnRequestManualApproval.addEventListener('click', () => {
+      if (!currentPendingTargetId) return;
+      const name = userNameInput.value.trim() || ('Usuario-' + myDeviceId.substring(0, 4));
+      localStorage.setItem('conecty_user_name', name);
+
+      if (passwordModal) passwordModal.classList.add('hidden');
+      if (waitingTargetIdDisplay) waitingTargetIdDisplay.textContent = formatDeviceId(currentPendingTargetId);
+      if (waitingHostNameText) waitingHostNameText.textContent = 'el anfitrión';
+      if (waitingApprovalModal) waitingApprovalModal.classList.remove('hidden');
+
+      socket.emit('request-connection', {
+        targetDeviceId: currentPendingTargetId,
+        requesterName: name,
+        mode: currentPendingMode
+      });
+    });
+  }
+
+  if (btnStartFileTransferLobby) {
+    btnStartFileTransferLobby.addEventListener('click', () => {
+      let targetRaw = targetDeviceIdInput.value.replace(/\D/g, '');
+      if (!targetRaw || targetRaw.length !== 9) {
+        showToast('Por favor introduce el número de 9 dígitos del destino para transferir archivos', 'info');
+        targetDeviceIdInput.focus();
+        return;
+      }
+      if (targetRaw === myDeviceId) {
+        showToast('No puedes transferirte archivos a ti mismo', 'info');
+        return;
+      }
+      openPasswordModal(targetRaw, 'file-transfer');
+    });
+  }
+
   connectRemoteForm.addEventListener('submit', (e) => {
     e.preventDefault();
-    const name = userNameInput.value.trim() || ('Usuario-' + myDeviceId.substring(0, 4));
-    localStorage.setItem('conecty_user_name', name);
-
     let targetRaw = targetDeviceIdInput.value.replace(/\D/g, '');
-    if (!targetRaw) {
+    if (!targetRaw || targetRaw.length !== 9) {
       showToast('Por favor introduce el número de 9 dígitos del destino', 'info');
+      targetDeviceIdInput.focus();
       return;
     }
 
@@ -870,14 +1165,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    waitingTargetIdDisplay.textContent = formatDeviceId(targetRaw);
-    waitingHostNameText.textContent = 'el anfitrión';
-    waitingApprovalModal.classList.remove('hidden');
-
-    socket.emit('request-connection', {
-      targetDeviceId: targetRaw,
-      requesterName: name
-    });
+    openPasswordModal(targetRaw, 'screen');
   });
 
   socket.on('connection-request-sent', ({ requestId, hostName }) => {
@@ -889,10 +1177,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     waitingApprovalModal.classList.add('hidden');
     currentOutgoingRequestId = null;
 
+    if (res.status === 'invalid-password') {
+      if (passwordModal) passwordModal.classList.remove('hidden');
+      if (remotePasswordInput) {
+        remotePasswordInput.focus();
+        remotePasswordInput.select();
+      }
+      showToast(res.message || 'Contraseña incorrecta. Inténtalo de nuevo o solicita aprobación manual.', 'info');
+      return;
+    }
+
     if (res.status === 'accepted') {
       const name = userNameInput.value.trim() || ('Usuario-' + myDeviceId.substring(0, 4));
-      showToast(`🎉 Conexión autorizada por ${res.hostName || 'el anfitrión'}`, 'success');
+      if (res.unattended) {
+        showToast(`🎉 Conexión autorizada por contraseña (${res.hostName || 'Acceso Desatendido'})`, 'success');
+      } else {
+        showToast(`🎉 Conexión autorizada por ${res.hostName || 'el anfitrión'}`, 'success');
+      }
+      if (res.targetDeviceId) {
+        saveSessionToHistory(res.targetDeviceId, res.hostName);
+      }
       await startSession(name, res.roomId);
+      if (res.mode === 'file-transfer') {
+        openFileTransferModal();
+      }
     } else if (res.status === 'rejected') {
       showToast('⛔ Solicitud rechazada: El anfitrión no autorizó el acceso', 'info');
     } else if (res.status === 'offline') {
@@ -918,6 +1226,321 @@ document.addEventListener('DOMContentLoaded', async () => {
     localStorage.setItem('conecty_user_name', name);
     await startSession(name, 'device-' + myDeviceId);
   });
+
+  // ================= RUSTDESK P2P FILE TRANSFER ENGINE =================
+  let localFileQueue = [];
+  const incomingTransfers = new Map(); // fileId -> { name, size, totalChunks, chunks: [], mimeType, receivedCount: 0 }
+  let receivedFiles = [];
+
+  function formatBytes(bytes) {
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
+
+  function renderLocalQueue() {
+    if (!localFilesQueue) return;
+    localFilesQueue.innerHTML = '';
+    if (localFileQueue.length === 0) {
+      if (btnSendFiles) btnSendFiles.disabled = true;
+      return;
+    }
+    if (btnSendFiles) btnSendFiles.disabled = false;
+
+    localFileQueue.forEach((file, idx) => {
+      const item = document.createElement('div');
+      item.className = 'p-2.5 rounded-xl bg-[#11141a] border border-[#2c3340] flex items-center justify-between text-xs';
+      item.innerHTML = `
+        <div class="flex items-center space-x-2 overflow-hidden">
+          <i data-lucide="file" class="w-4 h-4 text-[#60a5fa] shrink-0"></i>
+          <span class="text-white font-medium truncate max-w-[180px]">${escapeHtml(file.name)}</span>
+          <span class="text-[10px] text-slate-400 font-mono">(${formatBytes(file.size)})</span>
+        </div>
+        <button type="button" class="btn-del-queued text-slate-500 hover:text-rose-400 p-1" data-index="${idx}">
+          <i data-lucide="x" class="w-3.5 h-3.5"></i>
+        </button>
+      `;
+      item.querySelector('.btn-del-queued').addEventListener('click', (e) => {
+        e.stopPropagation();
+        localFileQueue.splice(idx, 1);
+        renderLocalQueue();
+      });
+      localFilesQueue.appendChild(item);
+    });
+    if (window.lucide) lucide.createIcons();
+  }
+
+  function addFilesToQueue(files) {
+    for (let i = 0; i < files.length; i++) {
+      localFileQueue.push(files[i]);
+    }
+    renderLocalQueue();
+  }
+
+  if (dropZone && localFileInput) {
+    dropZone.addEventListener('click', () => localFileInput.click());
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.classList.add('border-[#0d6efd]', 'bg-[#181d25]');
+    });
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.classList.remove('border-[#0d6efd]', 'bg-[#181d25]');
+    });
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('border-[#0d6efd]', 'bg-[#181d25]');
+      if (e.dataTransfer && e.dataTransfer.files) {
+        addFilesToQueue(e.dataTransfer.files);
+      }
+    });
+    localFileInput.addEventListener('change', (e) => {
+      if (e.target.files) {
+        addFilesToQueue(e.target.files);
+      }
+    });
+  }
+
+  function renderReceivedFiles() {
+    if (!remoteFilesList) return;
+    if (receivedFiles.length === 0) {
+      if (emptyReceivedNotice) emptyReceivedNotice.classList.remove('hidden');
+      if (receivedFilesCount) receivedFilesCount.textContent = '0 archivos';
+      return;
+    }
+    if (emptyReceivedNotice) emptyReceivedNotice.classList.add('hidden');
+    if (receivedFilesCount) receivedFilesCount.textContent = receivedFiles.length + (receivedFiles.length === 1 ? ' archivo' : ' archivos');
+
+    remoteFilesList.innerHTML = '';
+    receivedFiles.forEach((file) => {
+      const card = document.createElement('div');
+      card.className = 'p-3 rounded-xl bg-[#11141a] border border-[#2c3340] flex items-center justify-between text-xs hover:border-emerald-500/40 transition';
+      card.innerHTML = `
+        <div class="flex items-center space-x-2.5 overflow-hidden">
+          <div class="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30">
+            <i data-lucide="file-check" class="w-4 h-4"></i>
+          </div>
+          <div class="overflow-hidden">
+            <div class="font-bold text-white truncate max-w-[170px]">${escapeHtml(file.name)}</div>
+            <div class="text-[10px] text-slate-400 font-mono">${formatBytes(file.size)}</div>
+          </div>
+        </div>
+        <a href="${file.url}" download="${escapeHtml(file.name)}" class="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[11px] transition flex items-center space-x-1 shrink-0">
+          <i data-lucide="download" class="w-3.5 h-3.5"></i>
+          <span>Descargar</span>
+        </a>
+      `;
+      remoteFilesList.appendChild(card);
+    });
+    if (window.lucide) lucide.createIcons();
+  }
+
+  function broadcastDataOrSocket(data) {
+    let sent = false;
+    if (webrtc) {
+      sent = webrtc.broadcastData(data);
+    }
+    if (!sent && socket && socket.connected) {
+      socket.emit(data.type, data);
+    }
+  }
+
+  async function sendQueuedFiles() {
+    if (localFileQueue.length === 0) return;
+
+    if (btnSendFiles) btnSendFiles.disabled = true;
+    if (fileTransferProgressContainer) fileTransferProgressContainer.classList.remove('hidden');
+
+    const CHUNK_SIZE = 16384; // 16 KB por chunk WebRTC DataChannel
+
+    for (let fIdx = 0; fIdx < localFileQueue.length; fIdx++) {
+      const file = localFileQueue[fIdx];
+      const fileId = 'file_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+      const buffer = await file.arrayBuffer();
+      const totalChunks = Math.ceil(buffer.byteLength / CHUNK_SIZE);
+
+      if (fileTransferProgressText) {
+        fileTransferProgressText.textContent = `Enviando: ${file.name} (${fIdx + 1}/${localFileQueue.length})`;
+      }
+
+      broadcastDataOrSocket({
+        type: 'file-transfer-start',
+        fileId,
+        name: file.name,
+        size: file.size,
+        mimeType: file.type || 'application/octet-stream',
+        totalChunks
+      });
+
+      const uint8 = new Uint8Array(buffer);
+      for (let c = 0; c < totalChunks; c++) {
+        const start = c * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, buffer.byteLength);
+        const slice = uint8.subarray(start, end);
+        
+        let binary = '';
+        for (let i = 0; i < slice.byteLength; i++) {
+          binary += String.fromCharCode(slice[i]);
+        }
+        const b64 = btoa(binary);
+
+        broadcastDataOrSocket({
+          type: 'file-transfer-chunk',
+          fileId,
+          chunkIndex: c,
+          totalChunks,
+          data: b64
+        });
+
+        const percent = Math.round(((c + 1) / totalChunks) * 100);
+        if (fileTransferProgressFill) fileTransferProgressFill.style.width = percent + '%';
+        if (fileTransferProgressPercent) fileTransferProgressPercent.textContent = percent + '%';
+
+        if (c % 8 === 0) {
+          await new Promise(r => setTimeout(r, 8));
+        }
+      }
+
+      broadcastDataOrSocket({
+        type: 'file-transfer-complete',
+        fileId,
+        name: file.name,
+        size: file.size
+      });
+    }
+
+    showToast('✅ Archivos transferidos con éxito por P2P', 'success');
+    localFileQueue = [];
+    renderLocalQueue();
+
+    setTimeout(() => {
+      if (fileTransferProgressContainer) fileTransferProgressContainer.classList.add('hidden');
+      if (fileTransferProgressFill) fileTransferProgressFill.style.width = '0%';
+      if (fileTransferProgressPercent) fileTransferProgressPercent.textContent = '0%';
+    }, 2500);
+  }
+
+  if (btnSendFiles) {
+    btnSendFiles.addEventListener('click', sendQueuedFiles);
+  }
+
+  function handleIncomingFileStart(data) {
+    incomingTransfers.set(data.fileId, {
+      name: data.name,
+      size: data.size,
+      mimeType: data.mimeType || 'application/octet-stream',
+      totalChunks: data.totalChunks,
+      chunks: new Array(data.totalChunks),
+      receivedCount: 0
+    });
+    if (fileTransferProgressContainer) fileTransferProgressContainer.classList.remove('hidden');
+    if (fileTransferProgressText) fileTransferProgressText.textContent = `Recibiendo: ${data.name}`;
+    if (fileTransferProgressFill) fileTransferProgressFill.style.width = '0%';
+    if (fileTransferProgressPercent) fileTransferProgressPercent.textContent = '0%';
+  }
+
+  function handleIncomingFileChunk(data) {
+    const transfer = incomingTransfers.get(data.fileId);
+    if (!transfer) return;
+    
+    const binary = atob(data.data);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+
+    transfer.chunks[data.chunkIndex] = bytes;
+    transfer.receivedCount++;
+
+    const percent = Math.round((transfer.receivedCount / transfer.totalChunks) * 100);
+    if (fileTransferProgressFill) fileTransferProgressFill.style.width = percent + '%';
+    if (fileTransferProgressPercent) fileTransferProgressPercent.textContent = percent + '%';
+  }
+
+  function handleIncomingFileComplete(data) {
+    const transfer = incomingTransfers.get(data.fileId);
+    if (!transfer) return;
+
+    const blob = new Blob(transfer.chunks, { type: transfer.mimeType });
+    const url = URL.createObjectURL(blob);
+
+    receivedFiles.unshift({
+      name: transfer.name,
+      size: transfer.size,
+      url
+    });
+    renderReceivedFiles();
+    incomingTransfers.delete(data.fileId);
+
+    showToast(`📁 Archivo recibido: ${transfer.name}`, 'success');
+    if (soundEffects && userSettings.soundEffects) {
+      soundEffects.playTone(600, 'sine', 0.1);
+      setTimeout(() => soundEffects.playTone(800, 'sine', 0.15), 100);
+    }
+
+    if (fileTransferModal && fileTransferModal.classList.contains('hidden')) {
+      fileTransferModal.classList.remove('hidden');
+    }
+
+    setTimeout(() => {
+      if (fileTransferProgressContainer) fileTransferProgressContainer.classList.add('hidden');
+      if (fileTransferProgressFill) fileTransferProgressFill.style.width = '0%';
+      if (fileTransferProgressPercent) fileTransferProgressPercent.textContent = '0%';
+    }, 2500);
+  }
+
+  function openFileTransferModal() {
+    if (fileTransferPeerDisplay) {
+      fileTransferPeerDisplay.textContent = 'Conectado a: ' + (headerRoomId.textContent || 'Equipo Remoto');
+    }
+    if (fileTransferModal) {
+      fileTransferModal.classList.remove('hidden');
+      if (window.lucide) lucide.createIcons();
+    }
+  }
+
+  if (btnToolbarFileTransfer) {
+    btnToolbarFileTransfer.addEventListener('click', openFileTransferModal);
+  }
+  if (btnCloseFileTransfer && fileTransferModal) {
+    btnCloseFileTransfer.addEventListener('click', () => {
+      fileTransferModal.classList.add('hidden');
+    });
+  }
+
+  // ================= RUSTDESK SYSTEM KEYS FLOATING TOOLBAR =================
+  if (btnSystemKeysDropdown && systemKeysMenu) {
+    btnSystemKeysDropdown.addEventListener('click', (e) => {
+      e.stopPropagation();
+      systemKeysMenu.classList.toggle('hidden');
+    });
+    document.addEventListener('click', (e) => {
+      if (!systemKeysMenu.classList.contains('hidden') && !btnSystemKeysDropdown.contains(e.target)) {
+        systemKeysMenu.classList.add('hidden');
+      }
+    });
+  }
+
+  function sendSystemKeyAction(action, label) {
+    const payload = {
+      type: 'remote-control',
+      actionType: 'system-key',
+      action: action,
+      id: Date.now() + '-' + Math.random().toString(36).substring(2, 7)
+    };
+    if (webrtc) webrtc.broadcastData(payload);
+    if (socket && socket.connected) socket.emit('remote-control', payload);
+    showToast(`Comando enviado: ${label}`, 'info');
+    if (systemKeysMenu) systemKeysMenu.classList.add('hidden');
+  }
+
+  if (btnSendCAD) btnSendCAD.addEventListener('click', () => sendSystemKeyAction('ctrl-alt-del', 'Ctrl+Alt+Supr'));
+  if (btnSendWinKey) btnSendWinKey.addEventListener('click', () => sendSystemKeyAction('win', 'Tecla Windows'));
+  if (btnSendWinD) btnSendWinD.addEventListener('click', () => sendSystemKeyAction('win-d', 'Mostrar Escritorio (Win+D)'));
+  if (btnSendAltTab) btnSendAltTab.addEventListener('click', () => sendSystemKeyAction('alt-tab', 'Cambiar Ventana (Alt+Tab)'));
+  if (btnSendTaskMgr) btnSendTaskMgr.addEventListener('click', () => sendSystemKeyAction('taskmgr', 'Administrador de Tareas (Ctrl+Shift+Esc)'));
+  if (btnSendLock) btnSendLock.addEventListener('click', () => sendSystemKeyAction('lock', 'Bloquear Equipo (Win+L)'));
 
   // ================= 5. INICIALIZACIÓN DE LA SESIÓN EN SALA =================
   async function startSession(userName, roomId) {
@@ -968,6 +1591,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             handleIncomingRemoteControl(data, peerId);
           } else if (data.type === 'mouse-control-changed') {
             applyMouseControlChanged(data.authorizedUserId, data.authorizedUserName);
+          } else if (data.type === 'file-transfer-start') {
+            handleIncomingFileStart(data);
+          } else if (data.type === 'file-transfer-chunk') {
+            handleIncomingFileChunk(data);
+          } else if (data.type === 'file-transfer-complete') {
+            handleIncomingFileComplete(data);
           }
         }
       });
@@ -1471,6 +2100,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       handleIncomingRemoteControl(data, data.senderId);
     });
 
+    socket.on('file-transfer-start', (data) => {
+      handleIncomingFileStart(data);
+    });
+
+    socket.on('file-transfer-chunk', (data) => {
+      handleIncomingFileChunk(data);
+    });
+
+    socket.on('file-transfer-complete', (data) => {
+      handleIncomingFileComplete(data);
+    });
+
     socket.on('user-screen-updated', ({ userId, isSharing }) => {
       const user = participants.get(userId);
       if (user) {
@@ -1953,11 +2594,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Enlace de Invitación
   function copyInviteLink() {
     const inviteUrl = `${window.location.origin}/?connect=${myDeviceId}`;
-    navigator.clipboard.writeText(inviteUrl).then(() => {
-      showToast('📋 Enlace de conexión copiado', 'success');
-    }).catch(() => {
-      prompt('Copia este enlace para invitar:', inviteUrl);
-    });
+    copyTextToClipboard(inviteUrl, '📋 Enlace de conexión copiado');
   }
 
   btnCopyInvite.addEventListener('click', copyInviteLink);

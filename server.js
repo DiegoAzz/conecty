@@ -158,8 +158,8 @@ io.on('connection', (socket) => {
   let currentUser = null;
   socket.authorizedRooms = new Set();
 
-  // Registro del dispositivo en línea al abrir Conecty
-  socket.on('register-device', ({ deviceId, userName, isAgent }) => {
+  // Registro del dispositivo en línea al abrir Conecty / RustDesk
+  socket.on('register-device', ({ deviceId, userName, isAgent, password, permanentPassword }) => {
     if (!deviceId) return;
     const cleanId = deviceId.toString().replace(/\D/g, '');
     socket.deviceId = cleanId;
@@ -172,9 +172,15 @@ io.on('connection', (socket) => {
         socketId: socket.id,
         deviceId: cleanId,
         userName: socket.userName,
-        isAgent: socket.isAgent
+        isAgent: socket.isAgent,
+        password: password || '',
+        permanentPassword: permanentPassword || ''
       });
       socketDeviceMap.set(socket.id, cleanId);
+    } else {
+      const dev = onlineDevices.get(cleanId);
+      if (password) dev.password = password;
+      if (permanentPassword) dev.permanentPassword = permanentPassword;
     }
 
     // Su propio dispositivo siempre está autorizado para su propia sala
@@ -186,6 +192,15 @@ io.on('connection', (socket) => {
       isOnline: true,
       isAgent: socket.isAgent
     });
+  });
+
+  // Actualizar contraseñas de acceso (un solo uso o desatendida fija)
+  socket.on('set-device-password', ({ password, permanentPassword }) => {
+    if (socket.deviceId && onlineDevices.has(socket.deviceId)) {
+      const dev = onlineDevices.get(socket.deviceId);
+      if (password !== undefined) dev.password = password;
+      if (permanentPassword !== undefined) dev.permanentPassword = permanentPassword;
+    }
   });
 
   // Actualización de nombre en caliente
@@ -200,10 +215,11 @@ io.on('connection', (socket) => {
 
   // ================= SISTEMA DE AUTORIZACIÓN DE CONEXIONES =================
   // Un usuario solicita conectarse al equipo de otro usuario
-  socket.on('request-connection', ({ targetDeviceId, requesterName }) => {
+  socket.on('request-connection', ({ targetDeviceId, requesterName, password, mode }) => {
     const cleanTarget = (targetDeviceId || '').toString().replace(/\D/g, '');
     const rName = (requesterName && requesterName.trim()) || socket.userName || 'Usuario';
     const myCleanDevice = socket.deviceId || '';
+    const connMode = mode || 'screen'; // 'screen' | 'file-transfer'
 
     if (!cleanTarget || cleanTarget.length !== 9) {
       return socket.emit('connection-response', {
@@ -242,6 +258,47 @@ io.on('connection', (socket) => {
     const requestId = 'req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     const roomId = 'device-' + cleanTarget;
 
+    // --- ACCESO DESATENDIDO / VERIFICACIÓN DE CONTRASEÑA ESTILO RUSTDESK ---
+    if (password && password.trim()) {
+      const cleanPass = password.trim();
+      const hasValidPass = (targetDevice.password && targetDevice.password === cleanPass) ||
+                           (targetDevice.permanentPassword && targetDevice.permanentPassword === cleanPass);
+
+      if (hasValidPass) {
+        // Conexión autorizada inmediatamente sin confirmación manual
+        if (!socket.authorizedRooms) socket.authorizedRooms = new Set();
+        socket.authorizedRooms.add(roomId);
+
+        if (!hostSocket.authorizedRooms) hostSocket.authorizedRooms = new Set();
+        hostSocket.authorizedRooms.add(roomId);
+
+        socket.emit('connection-response', {
+          status: 'accepted',
+          roomId,
+          hostName: targetDevice.userName || 'Anfitrión',
+          targetDeviceId: cleanTarget,
+          mode: connMode,
+          unattended: true
+        });
+
+        hostSocket.emit('connection-approved-host', {
+          requestId,
+          roomId,
+          requesterName: rName,
+          mode: connMode,
+          unattended: true
+        });
+
+        return;
+      } else {
+        return socket.emit('connection-response', {
+          status: 'invalid-password',
+          targetDeviceId: cleanTarget,
+          message: 'Contraseña incorrecta. Verifica la contraseña del equipo remoto o solicita autorización manual.'
+        });
+      }
+    }
+
     // Timeout de 45 segundos para responder
     const timeoutTimer = setTimeout(() => {
       if (pendingRequests.has(requestId)) {
@@ -262,6 +319,7 @@ io.on('connection', (socket) => {
       targetDeviceId: cleanTarget,
       hostSocketId: targetDevice.socketId,
       roomId,
+      mode: connMode,
       timeoutTimer
     });
 
@@ -277,7 +335,8 @@ io.on('connection', (socket) => {
       requestId,
       requesterName: rName,
       requesterDeviceId: myCleanDevice,
-      targetDeviceId: cleanTarget
+      targetDeviceId: cleanTarget,
+      mode: connMode
     });
   });
 
@@ -303,7 +362,8 @@ io.on('connection', (socket) => {
           status: 'accepted',
           roomId: req.roomId,
           hostName: socket.userName || 'Anfitrión',
-          targetDeviceId: req.targetDeviceId
+          targetDeviceId: req.targetDeviceId,
+          mode: req.mode || 'screen'
         });
       }
 
@@ -316,7 +376,8 @@ io.on('connection', (socket) => {
       socket.emit('connection-approved-host', {
         requestId,
         roomId: req.roomId,
-        requesterName: req.requesterName
+        requesterName: req.requesterName,
+        mode: req.mode || 'screen'
       });
     } else {
       if (requesterSocket) {
@@ -568,6 +629,17 @@ io.on('connection', (socket) => {
         senderName: currentUser ? currentUser.name : (socket.userName || 'Operador')
       });
     }
+  });
+
+  // Reenvío de eventos de Transferencia de Archivos P2P / Relay Fallback
+  socket.on('file-transfer-start', (data) => {
+    if (currentRoom) socket.to(currentRoom).emit('file-transfer-start', data);
+  });
+  socket.on('file-transfer-chunk', (data) => {
+    if (currentRoom) socket.to(currentRoom).emit('file-transfer-chunk', data);
+  });
+  socket.on('file-transfer-complete', (data) => {
+    if (currentRoom) socket.to(currentRoom).emit('file-transfer-complete', data);
   });
 
   // Medición de latencia (Ping / Pong)
