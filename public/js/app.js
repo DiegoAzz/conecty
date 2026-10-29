@@ -399,18 +399,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Sincronizar campos del modal de configuración
   function populateSettingsModal() {
-    settingUserName.value = userNameInput.value;
-    settingDeviceId.value = formatDeviceId(myDeviceId);
-    settingSoundEffects.checked = userSettings.soundEffects;
-    settingAllowControl.checked = userSettings.allowControl;
-    settingRequireAuth.checked = userSettings.requireAuth;
-    settingAllowLaser.checked = userSettings.allowLaser;
-    settingScreenFps.value = userSettings.screenFps;
+    if (settingUserName) settingUserName.value = userNameInput.value;
+    if (settingDeviceId) settingDeviceId.value = formatDeviceId(myDeviceId);
+    if (settingSoundEffects) settingSoundEffects.checked = userSettings.soundEffects;
+    if (settingAllowControl) settingAllowControl.checked = userSettings.allowControl;
+    if (settingRequireAuth) settingRequireAuth.checked = userSettings.requireAuth;
+    if (settingAllowLaser) settingAllowLaser.checked = userSettings.allowLaser;
+    if (settingScreenFps) settingScreenFps.value = userSettings.screenFps;
     if (settingScreenQuality) settingScreenQuality.value = userSettings.screenQuality || 'auto';
-    settingDefaultScale.value = userSettings.defaultScale;
-    settingAntiMirror.checked = userSettings.antiMirror;
-    settingEchoCancellation.checked = userSettings.echoCancellation;
-    settingNoiseSuppression.checked = userSettings.noiseSuppression;
+    if (settingDefaultScale) settingDefaultScale.value = userSettings.defaultScale;
+    if (settingAntiMirror) settingAntiMirror.checked = userSettings.antiMirror;
+    if (settingEchoCancellation) settingEchoCancellation.checked = userSettings.echoCancellation;
+    if (settingNoiseSuppression) settingNoiseSuppression.checked = userSettings.noiseSuppression;
 
     if (settingPermanentPassword) {
       settingPermanentPassword.value = localStorage.getItem('conecty_permanent_password') || '';
@@ -568,35 +568,43 @@ document.addEventListener('DOMContentLoaded', async () => {
     saveSettings();
   });
 
-  settingAllowControl.addEventListener('change', () => {
-    userSettings.allowControl = settingAllowControl.checked;
-    if (toggleHostAllowControl) toggleHostAllowControl.checked = userSettings.allowControl;
-    saveSettings();
-  });
+  if (settingAllowControl) {
+    settingAllowControl.addEventListener('change', () => {
+      userSettings.allowControl = settingAllowControl.checked;
+      if (toggleHostAllowControl) toggleHostAllowControl.checked = userSettings.allowControl;
+      saveSettings();
+    });
+  }
 
   if (toggleHostAllowControl) {
     toggleHostAllowControl.addEventListener('change', () => {
       userSettings.allowControl = toggleHostAllowControl.checked;
-      settingAllowControl.checked = toggleHostAllowControl.checked;
+      if (settingAllowControl) settingAllowControl.checked = toggleHostAllowControl.checked;
       saveSettings();
       showToast(userSettings.allowControl ? '🎮 Control remoto habilitado' : '🔒 Control remoto deshabilitado', 'info');
     });
   }
 
-  settingRequireAuth.addEventListener('change', () => {
-    userSettings.requireAuth = settingRequireAuth.checked;
-    saveSettings();
-  });
+  if (settingRequireAuth) {
+    settingRequireAuth.addEventListener('change', () => {
+      userSettings.requireAuth = settingRequireAuth.checked;
+      saveSettings();
+    });
+  }
 
-  settingAllowLaser.addEventListener('change', () => {
-    userSettings.allowLaser = settingAllowLaser.checked;
-    saveSettings();
-  });
+  if (settingAllowLaser) {
+    settingAllowLaser.addEventListener('change', () => {
+      userSettings.allowLaser = settingAllowLaser.checked;
+      saveSettings();
+    });
+  }
 
-  settingScreenFps.addEventListener('change', () => {
-    userSettings.screenFps = settingScreenFps.value;
-    saveSettings();
-  });
+  if (settingScreenFps) {
+    settingScreenFps.addEventListener('change', () => {
+      userSettings.screenFps = settingScreenFps.value;
+      saveSettings();
+    });
+  }
 
   if (settingScreenQuality) {
     settingScreenQuality.addEventListener('change', () => {
@@ -610,12 +618,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  settingDefaultScale.addEventListener('change', () => {
-    userSettings.defaultScale = settingDefaultScale.value;
-    currentFitMode = userSettings.defaultScale;
-    updateScreenDisplay();
-    saveSettings();
-  });
+  if (settingDefaultScale) {
+    settingDefaultScale.addEventListener('change', () => {
+      userSettings.defaultScale = settingDefaultScale.value;
+      currentFitMode = userSettings.defaultScale;
+      updateScreenDisplay();
+      saveSettings();
+    });
+  }
 
   settingAntiMirror.addEventListener('change', () => {
     userSettings.antiMirror = settingAntiMirror.checked;
@@ -818,10 +828,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   };
 
-  btnTestAudio.addEventListener('click', () => {
-    soundEffects.testChime();
-    showToast('🔊 Sonido de prueba reproducido. Si lo escuchas, tus altavoces funcionan.', 'info');
-  });
+  if (btnTestAudio) {
+    btnTestAudio.addEventListener('click', () => {
+      soundEffects.testChime();
+      showToast('🔊 Sonido de prueba reproducido. Si lo escuchas, tus altavoces funcionan.', 'info');
+    });
+  }
 
   // Medidor interactivo del micrófono en Configuración
   let micMeterStream = null;
@@ -1151,22 +1163,46 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  connectRemoteForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    let targetRaw = targetDeviceIdInput.value.replace(/\D/g, '');
+  const btnConnectRemote = document.getElementById('btnConnectRemote');
+
+  function handleConnectRemoteSubmit(e) {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    let targetRaw = (targetDeviceIdInput ? targetDeviceIdInput.value : '').replace(/\D/g, '');
     if (!targetRaw || targetRaw.length !== 9) {
-      showToast('Por favor introduce el número de 9 dígitos del destino', 'info');
-      targetDeviceIdInput.focus();
-      return;
+      showToast('Por favor introduce el número de 9 dígitos del destino (Ej. 492 839 104)', 'info');
+      if (targetDeviceIdInput) targetDeviceIdInput.focus();
+      return false;
     }
 
     if (targetRaw === myDeviceId) {
       showToast('No puedes solicitar conexión a tu propio número', 'info');
-      return;
+      return false;
     }
 
     openPasswordModal(targetRaw, 'screen');
-  });
+    return false;
+  }
+
+  if (connectRemoteForm) {
+    connectRemoteForm.addEventListener('submit', handleConnectRemoteSubmit);
+  }
+  if (btnConnectRemote) {
+    btnConnectRemote.addEventListener('click', (e) => {
+      e.preventDefault();
+      handleConnectRemoteSubmit(e);
+    });
+  }
+  if (targetDeviceIdInput) {
+    targetDeviceIdInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleConnectRemoteSubmit(e);
+      }
+    });
+  }
 
   socket.on('connection-request-sent', ({ requestId, hostName }) => {
     currentOutgoingRequestId = requestId;
@@ -2409,9 +2445,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ================= 8. TARJETAS DE LLAMADA DE VOZ Y PARTICIPANTES =================
   function renderParticipants() {
     const totalCount = participants.size + 1;
-    participantsCount.textContent = `${totalCount} en sesión`;
+    if (participantsCount) participantsCount.textContent = `${totalCount} en sesión`;
     renderParticipantsDrawer();
 
+    if (!participantsBar) return;
     participantsBar.innerHTML = '';
 
     // Mi Tarjeta de Llamada con Ecualizador
@@ -2576,20 +2613,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         remoteControlBanner.classList.add('hidden');
       }
 
-      btnToggleLaser.classList.add('border-indigo-500/80', 'bg-indigo-950/40');
-      pointerModeIndicator.classList.remove('hidden');
+      if (btnToggleLaser) btnToggleLaser.classList.add('border-indigo-500/80', 'bg-indigo-950/40');
+      if (pointerModeIndicator) pointerModeIndicator.classList.remove('hidden');
     } else {
-      btnToggleLaser.classList.remove('border-indigo-500/80', 'bg-indigo-950/40');
-      pointerModeIndicator.classList.add('hidden');
+      if (btnToggleLaser) btnToggleLaser.classList.remove('border-indigo-500/80', 'bg-indigo-950/40');
+      if (pointerModeIndicator) pointerModeIndicator.classList.add('hidden');
     }
   });
 
-  btnClearCanvas.addEventListener('click', () => {
-    if (laser) {
-      laser.clearCanvas();
-      showToast('Anotaciones limpiadas', 'info');
-    }
-  });
+  if (btnClearCanvas) {
+    btnClearCanvas.addEventListener('click', () => {
+      if (laser) {
+        laser.clearCanvas();
+        showToast('Anotaciones limpiadas', 'info');
+      }
+    });
+  }
 
   // Enlace de Invitación
   function copyInviteLink() {

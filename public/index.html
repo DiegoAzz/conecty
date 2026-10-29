@@ -284,7 +284,7 @@
             </p>
 
             <!-- FORMULARIO DE CONEXIÓN RUSTDESK -->
-            <form id="connectRemoteForm" class="space-y-4">
+            <form id="connectRemoteForm" onsubmit="return false;" class="space-y-4">
               <div>
                 <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">ID de Compañero</label>
                 <div class="relative">
@@ -298,7 +298,7 @@
               <!-- BOTONES DE ACCIÓN: CONECTAR ESCRITORIO Y TRANSFERIR ARCHIVOS -->
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                 <!-- Botón 1: Conectar Escritorio Remoto -->
-                <button type="submit" id="btnConnectRemote" class="py-3 px-4 bg-[#0d6efd] hover:bg-[#0b5ed7] text-white font-bold rounded-xl shadow-lg shadow-blue-600/20 transition flex items-center justify-center space-x-2 text-xs">
+                <button type="button" id="btnConnectRemote" class="py-3 px-4 bg-[#0d6efd] hover:bg-[#0b5ed7] text-white font-bold rounded-xl shadow-lg shadow-blue-600/20 transition flex items-center justify-center space-x-2 text-xs">
                   <i data-lucide="screen-share" class="w-4 h-4"></i>
                   <span>Conectar Escritorio</span>
                 </button>
@@ -1191,9 +1191,9 @@
 
   <!-- Scripts -->
   <script src="/socket.io/socket.io.js"></script>
-  <script src="/js/laser.js?v=3.0.0-rustdesk"></script>
-  <script src="/js/webrtc.js?v=3.0.0-rustdesk"></script>
-  <script src="/js/app.js?v=3.0.0-rustdesk"></script>
+  <script src="/js/laser.js?v=3.0.1-rustdesk"></script>
+  <script src="/js/webrtc.js?v=3.0.1-rustdesk"></script>
+  <script src="/js/app.js?v=3.0.1-rustdesk"></script>
   <script>
     document.addEventListener("DOMContentLoaded", () => {
       if (window.lucide) lucide.createIcons();
