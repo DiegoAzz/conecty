@@ -9,6 +9,7 @@ RUN npm ci --omit=dev
 # Copiar código fuente
 COPY server.js ./
 COPY public/ ./public/
+COPY agent/ ./agent/
 
 ENV PORT=3000
 ENV NODE_ENV=production
